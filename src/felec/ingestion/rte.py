@@ -36,7 +36,10 @@ def fetch_records(dataset: str, start_date: date, end_date: date) -> pd.DataFram
     Cursoring instead by "date_heure > <last row's date_heure>" keeps offset
     at 0 always, so it has no such ceiling. This assumes date_heure is unique
     per record, consistent with save_raw's use of date_heure as the dedup key
-    for these same files.
+    for these same files -- if two rows ever tie on date_heure and land split
+    across a page boundary, the cursor would silently skip the rest of the
+    tied group, so that case is checked for explicitly and raises RuntimeError
+    rather than under-counting silently.
     Filtering uses date_heure (a real datetime column) rather than date
     (filtering on date returns HTTP 400 on these datasets -- verified).
     Returns a DataFrame with columns: date, heure, date_heure, consommation,
@@ -67,6 +70,11 @@ def fetch_records(dataset: str, start_date: date, end_date: date) -> pd.DataFram
         if not page:
             break
         rows.extend(page)
+        if len(page) >= 2 and page[-1]["date_heure"] == page[-2]["date_heure"]:
+            raise RuntimeError(
+                f"duplicate date_heure at page boundary: {page[-1]['date_heure']!r} -- "
+                "cursor pagination cannot safely advance past tied timestamps"
+            )
         lower_bound = f"'{page[-1]['date_heure']}'"
         comparator = ">"
         if len(page) < PAGE_SIZE:

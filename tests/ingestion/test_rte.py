@@ -1,7 +1,8 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from unittest.mock import Mock, patch
 
 import pandas as pd
+import pytest
 
 from felec.ingestion.rte import (
     CONS_DEF_DATASET,
@@ -21,10 +22,21 @@ ONE_RECORD = {
 }
 
 
+def _records(n: int, start_index: int = 0) -> list[dict]:
+    """n synthetic records with distinct, 15-minute-incrementing date_heure
+    values (like the real, ordered API response), starting start_index * 15
+    minutes past 2024-02-01T00:00:00Z."""
+    base = datetime.fromisoformat("2024-02-01T00:00:00+00:00")
+    return [
+        {**ONE_RECORD, "date_heure": (base + timedelta(minutes=15 * (start_index + i))).isoformat()}
+        for i in range(n)
+    ]
+
+
 @patch("felec.ingestion.rte.requests.get")
 def test_fetch_records_paginates_until_short_page(mock_get):
-    page_1 = {"results": [ONE_RECORD] * 100}
-    page_2 = {"results": [ONE_RECORD]}
+    page_1 = {"results": _records(100, start_index=0)}
+    page_2 = {"results": _records(1, start_index=100)}
     mock_get.side_effect = [
         Mock(json=lambda: page_1, raise_for_status=lambda: None),
         Mock(json=lambda: page_2, raise_for_status=lambda: None),
@@ -46,13 +58,11 @@ def test_fetch_records_paginates_by_cursoring_on_date_heure_not_offset(mock_get)
     carry an "offset" param, and each successive page's `where` clause must
     pick up strictly after the previous page's last row.
     """
-    page_1_last = {**ONE_RECORD, "date_heure": "2024-02-01T00:00:00+00:00"}
-    page_2_first = {**ONE_RECORD, "date_heure": "2024-02-01T00:15:00+00:00"}
-    page_1 = {"results": [page_1_last] * 100}
-    page_2 = {"results": [page_2_first]}
+    page_1_records = _records(100, start_index=0)
+    page_2_records = _records(1, start_index=100)
     mock_get.side_effect = [
-        Mock(json=lambda: page_1, raise_for_status=lambda: None),
-        Mock(json=lambda: page_2, raise_for_status=lambda: None),
+        Mock(json=lambda: {"results": page_1_records}, raise_for_status=lambda: None),
+        Mock(json=lambda: {"results": page_2_records}, raise_for_status=lambda: None),
     ]
 
     result = fetch_records(TR_DATASET, date(2024, 2, 1), date(2024, 2, 1))
@@ -62,7 +72,28 @@ def test_fetch_records_paginates_by_cursoring_on_date_heure_not_offset(mock_get)
     second_params = mock_get.call_args_list[1].kwargs["params"]
     assert "offset" not in first_params
     assert "offset" not in second_params
-    assert f"date_heure > '{page_1_last['date_heure']}'" in second_params["where"]
+    assert f"date_heure > '{page_1_records[-1]['date_heure']}'" in second_params["where"]
+
+
+@patch("felec.ingestion.rte.requests.get")
+def test_fetch_records_raises_on_duplicate_date_heure_at_page_boundary(mock_get):
+    """Regression test for the pagination guard: if two rows tie on date_heure
+    and the tie lands split across a page boundary, a plain ">" cursor would
+    silently skip every row after the tie forever, and nothing downstream
+    would notice (no row-count check exists anywhere in the pipeline). This
+    must raise loudly instead of under-counting silently.
+    """
+    tied = "2024-02-01T00:00:00+00:00"
+    page_1_results = [ONE_RECORD] * 98 + [
+        {**ONE_RECORD, "date_heure": tied},
+        {**ONE_RECORD, "date_heure": tied},
+    ]
+    mock_get.return_value = Mock(
+        json=lambda: {"results": page_1_results}, raise_for_status=lambda: None
+    )
+
+    with pytest.raises(RuntimeError, match="duplicate date_heure"):
+        fetch_records(TR_DATASET, date(2024, 2, 1), date(2024, 2, 1))
 
 
 @patch("felec.ingestion.rte.requests.get")
