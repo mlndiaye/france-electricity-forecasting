@@ -68,3 +68,15 @@ def test_backfill_queries_both_datasets_when_range_straddles_boundary(mock_fetch
     assert mock_fetch.call_count == 2
     mock_fetch.assert_any_call(CONS_DEF_DATASET, start, CONS_DEF_LAST_DATE)
     mock_fetch.assert_any_call(TR_DATASET, CONS_DEF_LAST_DATE + timedelta(days=1), end)
+
+
+@patch("felec.ingestion.rte.save_raw")
+@patch("felec.ingestion.rte.fetch_records")
+def test_backfill_queries_tr_only_when_fully_after_boundary(mock_fetch, mock_save):
+    mock_fetch.return_value = pd.DataFrame()
+    start = CONS_DEF_LAST_DATE + timedelta(days=10)
+    end = CONS_DEF_LAST_DATE + timedelta(days=20)
+
+    backfill(start, end)
+
+    mock_fetch.assert_called_once_with(TR_DATASET, start, end)
