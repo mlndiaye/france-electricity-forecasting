@@ -37,6 +37,35 @@ def test_fetch_records_paginates_until_short_page(mock_get):
 
 
 @patch("felec.ingestion.rte.requests.get")
+def test_fetch_records_paginates_by_cursoring_on_date_heure_not_offset(mock_get):
+    """Regression test: the ODRE API hard-caps offset + limit at 10,000
+    (InvalidRESTParameterError, verified against the live API), which an
+    offset-based page loop exceeds for any date range with more than 10,000
+    records -- guaranteed for a real multi-year backfill. Pagination must
+    advance by cursoring on date_heure instead, so no request should ever
+    carry an "offset" param, and each successive page's `where` clause must
+    pick up strictly after the previous page's last row.
+    """
+    page_1_last = {**ONE_RECORD, "date_heure": "2024-02-01T00:00:00+00:00"}
+    page_2_first = {**ONE_RECORD, "date_heure": "2024-02-01T00:15:00+00:00"}
+    page_1 = {"results": [page_1_last] * 100}
+    page_2 = {"results": [page_2_first]}
+    mock_get.side_effect = [
+        Mock(json=lambda: page_1, raise_for_status=lambda: None),
+        Mock(json=lambda: page_2, raise_for_status=lambda: None),
+    ]
+
+    result = fetch_records(TR_DATASET, date(2024, 2, 1), date(2024, 2, 1))
+
+    assert len(result) == 101
+    first_params = mock_get.call_args_list[0].kwargs["params"]
+    second_params = mock_get.call_args_list[1].kwargs["params"]
+    assert "offset" not in first_params
+    assert "offset" not in second_params
+    assert f"date_heure > '{page_1_last['date_heure']}'" in second_params["where"]
+
+
+@patch("felec.ingestion.rte.requests.get")
 def test_fetch_records_stops_on_empty_page(mock_get):
     mock_get.return_value = Mock(json=lambda: {"results": []}, raise_for_status=lambda: None)
 

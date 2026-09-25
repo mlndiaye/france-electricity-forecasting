@@ -28,21 +28,30 @@ CONS_DEF_LAST_DATE = date(2026, 6, 30)
 def fetch_records(dataset: str, start_date: date, end_date: date) -> pd.DataFrame:
     """Fetch every record of `dataset` with date_heure in [start_date, end_date], inclusive.
 
-    Paginates through the API (100 records per page, the API's page size).
+    Paginates through the API (100 records per page, the API's page size) by
+    cursoring on date_heure rather than using offset: the API hard-caps
+    offset + limit at 10,000 (verified empirically -- InvalidRESTParameterError
+    above that), which a naive offset-based loop exceeds for any range longer
+    than ~100 days at 15-minute resolution -- i.e. for any real backfill.
+    Cursoring instead by "date_heure > <last row's date_heure>" keeps offset
+    at 0 always, so it has no such ceiling. This assumes date_heure is unique
+    per record, consistent with save_raw's use of date_heure as the dedup key
+    for these same files.
     Filtering uses date_heure (a real datetime column) rather than date
     (filtering on date returns HTTP 400 on these datasets -- verified).
     Returns a DataFrame with columns: date, heure, date_heure, consommation,
     prevision_j1, prevision_j.
     """
     end_exclusive = end_date + timedelta(days=1)
-    where = (
-        f"date_heure >= '{start_date.isoformat()}' "
-        f"AND date_heure < '{end_exclusive.isoformat()}'"
-    )
+    lower_bound = f"'{start_date.isoformat()}'"
+    comparator = ">="
     rows: list[dict] = []
-    offset = 0
 
     while True:
+        where = (
+            f"date_heure {comparator} {lower_bound} "
+            f"AND date_heure < '{end_exclusive.isoformat()}'"
+        )
         response = requests.get(
             RECORDS_URL.format(dataset=dataset),
             params={
@@ -50,7 +59,6 @@ def fetch_records(dataset: str, start_date: date, end_date: date) -> pd.DataFram
                 "where": where,
                 "order_by": "date_heure",
                 "limit": PAGE_SIZE,
-                "offset": offset,
             },
             timeout=30,
         )
@@ -59,7 +67,8 @@ def fetch_records(dataset: str, start_date: date, end_date: date) -> pd.DataFram
         if not page:
             break
         rows.extend(page)
-        offset += PAGE_SIZE
+        lower_bound = f"'{page[-1]['date_heure']}'"
+        comparator = ">"
         if len(page) < PAGE_SIZE:
             break
 
