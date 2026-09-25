@@ -5,6 +5,7 @@ import pytest
 
 from felec.processing.build_dataset import (
     aggregate_rte_hourly,
+    build_dataset,
     combine_cities_weighted,
     expand_calendar_to_hourly,
 )
@@ -86,3 +87,66 @@ def test_expand_calendar_to_hourly_flags_holiday_and_vacation():
     assert result.iloc[0]["vacances_zone_a"] == True
     assert result.iloc[1]["vacances_zone_a"] == True  # still within the Noël range
     assert result.iloc[0]["vacances_zone_b"] == False
+
+
+@patch("felec.processing.build_dataset.save_processed")
+@patch("felec.processing.build_dataset.load_raw")
+def test_build_dataset_wires_sources_together(mock_load_raw, mock_save_processed):
+    """Thin integration test: proves the orchestrator's wiring, not the math.
+
+    cons_def and tr each contribute a row for a *different* hour, so a
+    copy-paste slip that concatenates only one of the two datasets would
+    silently drop a row instead of passing. The other assertions catch:
+    save_processed never called (validate_processed_dataset raised, or the
+    function short-circuited), and a value from the fake input failing to
+    reach the output (a wrong merge column/type).
+    """
+
+    def fake_load_raw(relative_path):
+        if relative_path == "rte/cons_def.parquet":
+            return pd.DataFrame(
+                {
+                    "date_heure": ["2024-02-01T08:00:00+00:00"],
+                    "consommation": [50000],
+                    "prevision_j1": [51000],
+                    "prevision_j": [50500],
+                }
+            )
+        if relative_path == "rte/tr.parquet":
+            return pd.DataFrame(
+                {
+                    "date_heure": ["2024-02-01T09:00:00+00:00"],
+                    "consommation": [60000],
+                    "prevision_j1": [61000],
+                    "prevision_j": [60500],
+                }
+            )
+        if relative_path.startswith("weather/"):
+            return pd.DataFrame(
+                {
+                    "datetime": ["2024-02-01T08:00", "2024-02-01T09:00"],
+                    "temperature": [10.0, 11.0],
+                }
+            )
+        if relative_path == "calendar/jours_feries.parquet":
+            return pd.DataFrame({"date": ["2024-01-01"], "nom": ["1er janvier"]})
+        if relative_path == "calendar/vacances_scolaires.parquet":
+            return pd.DataFrame(
+                columns=["zone", "date_debut", "date_fin", "description"]
+            )
+        raise AssertionError(f"unexpected load_raw path: {relative_path}")
+
+    mock_load_raw.side_effect = fake_load_raw
+
+    result = build_dataset()
+
+    # Both cons_def's and tr's row made it through the concat + merges.
+    assert len(result) == 2
+    assert set(result["consommation"]) == {50000.0, 60000.0}
+    assert "temperature_nationale" in result.columns
+    assert (result["est_ferie"] == False).all()  # 2024-02-01 is not a holiday
+
+    mock_save_processed.assert_called_once()
+    saved_df, saved_filename = mock_save_processed.call_args[0]
+    assert len(saved_df) == 2
+    assert saved_filename == "dataset.parquet"

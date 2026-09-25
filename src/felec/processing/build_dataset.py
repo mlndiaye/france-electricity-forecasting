@@ -17,6 +17,11 @@ def aggregate_rte_hourly(df: pd.DataFrame) -> pd.DataFrame:
     Input columns: date_heure (str, ISO), consommation, prevision_j1, prevision_j.
     Output: date_heure floored to the hour (UTC), same columns averaged.
     """
+    if df.empty:
+        raise ValueError(
+            "aggregate_rte_hourly received an empty DataFrame -- no RTE data has "
+            "been ingested yet (rte/cons_def.parquet and rte/tr.parquet don't exist)"
+        )
     df = df.copy()
     df["date_heure"] = pd.to_datetime(df["date_heure"], utc=True)
     df["hour"] = df["date_heure"].dt.floor("h")
@@ -102,6 +107,9 @@ def build_dataset() -> pd.DataFrame:
     """Load all raw sources, join them into one hourly dataset, validate, and save."""
     cons_def = load_raw("rte/cons_def.parquet")
     tr = load_raw("rte/tr.parquet")
+    # cons_def and tr must not overlap (see CONS_DEF_LAST_DATE in rte.py); if
+    # that boundary ever goes stale, overlapping rows here would be silently
+    # averaged together by aggregate_rte_hourly instead of erroring.
     rte_raw = pd.concat([cons_def, tr], ignore_index=True)
     rte_hourly = aggregate_rte_hourly(rte_raw)
 
