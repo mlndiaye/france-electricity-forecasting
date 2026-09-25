@@ -22,7 +22,8 @@ def fetch_jours_feries(year: int) -> pd.DataFrame:
     response = requests.get(JOURS_FERIES_URL.format(year=year), timeout=10)
     response.raise_for_status()
     data = response.json()
-    return pd.DataFrame([{"date": d, "nom": nom} for d, nom in data.items()])
+    rows = [{"date": d, "nom": nom} for d, nom in data.items()]
+    return pd.DataFrame(rows, columns=["date", "nom"])
 
 
 def fetch_vacances_scolaires(annee_scolaire: str) -> pd.DataFrame:
@@ -35,6 +36,7 @@ def fetch_vacances_scolaires(annee_scolaire: str) -> pd.DataFrame:
     """
     params = {
         "dataset": VACANCES_DATASET,
+        # Safely above the ~232 records/school year confirmed against the live API.
         "rows": 1000,
         "refine.annee_scolaire": annee_scolaire,
     }
@@ -52,7 +54,7 @@ def fetch_vacances_scolaires(annee_scolaire: str) -> pd.DataFrame:
         for r in records
         if r["fields"]["zones"] in VALID_ZONES
     ]
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(rows, columns=["zone", "date_debut", "date_fin", "description"])
     return df.drop_duplicates().reset_index(drop=True)
 
 

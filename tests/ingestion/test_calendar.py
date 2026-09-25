@@ -1,6 +1,8 @@
 from unittest.mock import Mock, patch
 
-from felec.ingestion.calendar import fetch_jours_feries, fetch_vacances_scolaires
+import pandas as pd
+
+from felec.ingestion.calendar import backfill, fetch_jours_feries, fetch_vacances_scolaires
 
 JOURS_FERIES_2024 = {
     "2024-01-01": "1er janvier",
@@ -76,3 +78,26 @@ def test_fetch_vacances_scolaires_deduplicates_locations(mock_get):
     zone_a = result[result["zone"] == "Zone A"].iloc[0]
     assert zone_a["date_debut"] == "2023-12-22"
     assert zone_a["date_fin"] == "2024-01-07"
+
+
+@patch("felec.ingestion.calendar.save_raw")
+@patch("felec.ingestion.calendar.fetch_vacances_scolaires")
+@patch("felec.ingestion.calendar.fetch_jours_feries")
+def test_backfill_calls_fetch_and_save_for_each_year(mock_ferie, mock_vac, mock_save):
+    mock_ferie.return_value = pd.DataFrame({"date": ["2024-01-01"], "nom": ["x"]})
+    mock_vac.return_value = pd.DataFrame(
+        {
+            "zone": ["Zone A"],
+            "date_debut": ["2024-01-01"],
+            "date_fin": ["2024-01-02"],
+            "description": ["x"],
+        }
+    )
+
+    backfill(2024, 2025)
+
+    assert mock_ferie.call_count == 2  # 2024, 2025
+    assert mock_ferie.call_args_list == [((2024,),), ((2025,),)]
+    assert mock_vac.call_count == 2  # "2024-2025", "2025-2026"
+    assert mock_vac.call_args_list == [(("2024-2025",),), (("2025-2026",),)]
+    assert mock_save.call_count == 4  # 2 jours_feries + 2 vacances saves
