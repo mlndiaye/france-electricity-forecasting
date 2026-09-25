@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from felec.ingestion import calendar as calendar_connector
 from felec.ingestion import rte as rte_connector
@@ -12,7 +12,7 @@ from felec.processing.build_dataset import build_dataset
 # First date confirmed to have real AROME France D-1 forecast data via the
 # Previous Runs API (verified by binary search against the live API,
 # 2026-09-25) -- see docs/decisions/0001-problem-definition-scope-and-weather-window.md
-STUDY_WINDOW_START = datetime(2024, 2, 1, tzinfo=UTC).date()
+STUDY_WINDOW_START = date(2024, 2, 1)
 
 
 def backfill() -> None:
