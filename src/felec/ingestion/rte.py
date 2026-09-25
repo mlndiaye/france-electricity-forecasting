@@ -74,7 +74,19 @@ def fetch_records(dataset: str, start_date: date, end_date: date) -> pd.DataFram
         if not page:
             break
 
-        new_rows = [r for r in page if r["date_heure"] not in seen_date_heures]
+        # Filter and mark-as-seen incrementally (not via a list comprehension
+        # followed by a batch .update()): two rows sharing a date_heure within
+        # the SAME page must not both pass, since they'd both be checked
+        # against the same not-yet-updated set. Adding each row's date_heure
+        # to seen_date_heures as soon as it's accepted collapses same-page
+        # ties to a single row, consistent with how cross-page ties are
+        # already handled by the inclusive cursor above.
+        new_rows: list[dict] = []
+        for r in page:
+            if r["date_heure"] not in seen_date_heures:
+                new_rows.append(r)
+                seen_date_heures.add(r["date_heure"])
+
         if not new_rows and len(page) == PAGE_SIZE:
             raise RuntimeError(
                 f"RTE pagination made no progress at cursor {cursor!r} -- more than "
@@ -82,7 +94,6 @@ def fetch_records(dataset: str, start_date: date, end_date: date) -> pd.DataFram
                 "breaks this cursor-based pagination's assumption that date_heure "
                 "is a usable ordering key."
             )
-        seen_date_heures.update(r["date_heure"] for r in new_rows)
         rows.extend(new_rows)
 
         if len(page) < PAGE_SIZE:

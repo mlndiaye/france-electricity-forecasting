@@ -78,23 +78,29 @@ def test_fetch_records_paginates_by_cursoring_on_date_heure_not_offset(mock_get)
 
 
 @patch("felec.ingestion.rte.requests.get")
-def test_fetch_records_keeps_tie_split_across_page_boundary(mock_get):
-    """The real-world case a strict '>' cursor (or a guard that only checks
-    page[-1] == page[-2] within one page) cannot catch: one member of a tied
-    pair is the LAST row of a full page, and the other tied row is the FIRST
-    row of the NEXT page. Results are sorted by date_heure, so re-requesting
-    from (inclusive of) the last-seen date_heure re-fetches that shared
-    timestamp as the next page's first row; de-duplicating on date_heure
-    (keeping the first occurrence already collected) must recover exactly the
-    distinct records, with no loss and no double-count.
+def test_fetch_records_dedupes_row_refetched_at_inclusive_cursor_boundary(mock_get):
+    """The inclusive ">=" cursor deliberately re-requests page 1's last row as
+    (at least) page 2's first row -- this is how a tie on date_heure at the
+    boundary would be recognized in the first place. This proves that re-fetch
+    is correctly collapsed to a single row (keeping the first-seen, page-1
+    copy -- proven via a sentinel field the page-2 copy doesn't share) rather
+    than counted twice, while a genuinely new row past the boundary is still
+    kept.
+
+    Note: this constructs the re-fetch-of-the-same-row pattern the inclusive
+    cursor itself produces, not two independently-tied original API rows (the
+    connector assumes date_heure is unique per underlying record -- see this
+    module's docstring). See test_fetch_records_dedupes_same_page_tie below
+    for two rows genuinely sharing a date_heure.
     """
     page_1_records = _records(100, start_index=0)
     tied_date_heure = page_1_records[-1]["date_heure"]
+    refetched_row = {**ONE_RECORD, "date_heure": tied_date_heure, "consommation": -1}
     genuinely_new_date_heure = (
         datetime.fromisoformat(tied_date_heure) + timedelta(minutes=15)
     ).isoformat()
     page_2_records = [
-        {**ONE_RECORD, "date_heure": tied_date_heure},  # re-fetch of page 1's last row
+        refetched_row,
         {**ONE_RECORD, "date_heure": genuinely_new_date_heure},
     ]
     mock_get.side_effect = [
@@ -109,7 +115,38 @@ def test_fetch_records_keeps_tie_split_across_page_boundary(mock_get):
     # must not be lost either.
     assert len(result) == 101
     assert result["date_heure"].nunique() == 101
+    tied_rows = result.loc[result["date_heure"] == tied_date_heure]
+    assert len(tied_rows) == 1
+    assert tied_rows.iloc[0]["consommation"] != -1  # kept page 1's copy, not the re-fetch
     assert genuinely_new_date_heure in set(result["date_heure"])
+
+
+@patch("felec.ingestion.rte.requests.get")
+def test_fetch_records_dedupes_same_page_tie(mock_get):
+    """Regression test for the incremental-dedup fix: two rows sharing a
+    date_heure WITHIN THE SAME PAGE (not at a page boundary) must collapse to
+    a single row. Filtering has to check each row against the accumulated
+    seen-set as it goes; filtering the whole page via a list comprehension and
+    only updating the seen-set afterward lets both tied rows in one page pass
+    the same stale check and both get added -- silently duplicating the row
+    instead of deduping it (this was a real regression caught by review).
+    """
+    tied_date_heure = _records(1, start_index=10)[0]["date_heure"]
+    page = (
+        _records(10, start_index=0)
+        + [
+            {**ONE_RECORD, "date_heure": tied_date_heure},
+            {**ONE_RECORD, "date_heure": tied_date_heure},
+        ]
+        + _records(10, start_index=11)
+    )
+    mock_get.return_value = Mock(json=lambda: {"results": page}, raise_for_status=lambda: None)
+
+    result = fetch_records(TR_DATASET, date(2024, 2, 1), date(2024, 2, 1))
+
+    assert mock_get.call_count == 1  # page shorter than PAGE_SIZE -- no second request
+    assert len(result) == 21  # 10 + 1 (deduped tie) + 10, not 22
+    assert len(result.loc[result["date_heure"] == tied_date_heure]) == 1
 
 
 @patch("felec.ingestion.rte.PAGE_SIZE", 2)
