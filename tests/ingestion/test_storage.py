@@ -1,6 +1,6 @@
 import pandas as pd
 
-from felec.ingestion.storage import load_raw, save_raw
+from felec.ingestion.storage import PROCESSED_DIR, load_raw, save_processed, save_raw
 
 
 def test_save_raw_creates_new_file(tmp_path, monkeypatch):
@@ -38,3 +38,13 @@ def test_load_raw_returns_empty_dataframe_when_missing(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = load_raw("does/not/exist.parquet")
     assert result.empty
+
+
+def test_save_processed_overwrites_existing_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    save_processed(pd.DataFrame({"date": ["2024-01-01"], "value": [1]}), "out.parquet")
+
+    save_processed(pd.DataFrame({"date": ["2024-02-01"], "value": [2]}), "out.parquet")
+
+    result = pd.read_parquet(PROCESSED_DIR / "out.parquet")
+    assert result.to_dict("records") == [{"date": "2024-02-01", "value": 2}]
