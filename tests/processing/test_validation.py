@@ -39,3 +39,12 @@ def test_consumption_out_of_range_fails():
 
     with pytest.raises(pa.errors.SchemaError):
         validate_processed_dataset(df)
+
+
+def test_naive_datetime_fails():
+    row = _valid_row()
+    row["date_heure"] = pd.Timestamp("2024-02-01T08:00:00")  # naive, no tz
+    df = pd.DataFrame([row])
+
+    with pytest.raises((pa.errors.SchemaError, ValueError)):
+        validate_processed_dataset(df)
