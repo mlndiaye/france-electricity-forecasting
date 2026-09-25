@@ -11,8 +11,8 @@ processed_dataset_schema = DataFrameSchema(
         # coerce=True: accept any datetime64 unit/precision (pandas's default
         # resolution varies across versions), as long as it is UTC-aware.
         "date_heure": Column(DateTime(tz=datetime.UTC), coerce=True),
-        "consommation": Column(pa.Float, Check.in_range(15_000, 100_000), nullable=True),
-        "prevision_j1": Column(pa.Float, Check.in_range(15_000, 100_000), nullable=True),
+        "consommation": Column(pa.Float, Check.in_range(20_000, 100_000), nullable=True),
+        "prevision_j1": Column(pa.Float, Check.in_range(20_000, 100_000), nullable=True),
         "temperature_nationale": Column(pa.Float, Check.in_range(-25, 45), nullable=True),
         "est_ferie": Column(pa.Bool),
         "vacances_zone_a": Column(pa.Bool),
