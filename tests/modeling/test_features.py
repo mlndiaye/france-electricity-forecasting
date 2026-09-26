@@ -20,12 +20,14 @@ def test_cutoff_instant_for_date_in_summer_is_utc_plus_2():
 
 def test_cutoff_instant_for_date_around_spring_dst_transition():
     # 2024-03-31 is the spring-forward transition in France (02:00 CET -> 03:00
-    # CEST). Noon that day is unambiguous either way, but only correct if computed
-    # by constructing the hour directly rather than adding a fixed duration to
-    # midnight (which would cross the skipped hour). D-1 here is 2024-03-30, fully
-    # before the transition, still CET (UTC+1).
-    result = cutoff_instant_for_date(date(2024, 3, 31), cutoff_hour=12)
-    assert result == pd.Timestamp("2024-03-30T11:00:00", tz="UTC")
+    # CEST). D-1 for target_date=2024-04-01 is 2024-03-31 itself -- the transition
+    # day. Noon that day is unambiguous (well after the 2am jump), but only correct
+    # if computed by constructing the hour directly rather than adding a fixed
+    # duration to midnight, which would cross the skipped hour and land one hour
+    # off. Confirmed by reverting to the naive implementation: it returns
+    # 2024-03-31T11:00:00Z instead of the correct 2024-03-31T10:00:00Z.
+    result = cutoff_instant_for_date(date(2024, 4, 1), cutoff_hour=12)
+    assert result == pd.Timestamp("2024-03-31T10:00:00", tz="UTC")
 
 
 def _hourly_index(n_hours: int, start="2024-01-01") -> pd.DatetimeIndex:
