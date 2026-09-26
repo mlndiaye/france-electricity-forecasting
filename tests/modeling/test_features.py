@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from felec.modeling.features import (
+    FEATURE_COLUMNS,
     build_calendar_features,
     build_features,
     compute_lag_168h,
@@ -95,7 +96,10 @@ def test_compute_recent_trend_averages_the_24h_window_ending_at_cutoff():
     assert len(window) == 24
     expected = window.mean()
 
-    target_rows = result[index.tz_convert("Europe/Paris").normalize() == pd.Timestamp("2024-02-03", tz="Europe/Paris")]
+    target_rows = result[
+        index.tz_convert("Europe/Paris").normalize()
+        == pd.Timestamp("2024-02-03", tz="Europe/Paris")
+    ]
     assert (target_rows == expected).all()
 
 
@@ -138,10 +142,5 @@ def test_build_features_combines_all_columns():
 
     result = build_features(df)
 
-    assert set(result.columns) == {
-        "hour", "day_of_week", "month",
-        "lag_168h", "recent_trend",
-        "temperature_nationale", "est_ferie",
-        "vacances_zone_a", "vacances_zone_b", "vacances_zone_c",
-    }
+    assert list(result.columns) == FEATURE_COLUMNS
     assert len(result) == len(df)

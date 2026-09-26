@@ -1,4 +1,5 @@
 """Feature construction for modeling, each one safe relative to a D-1 cutoff."""
+
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -31,8 +32,11 @@ def cutoff_instant_for_date(target_date: date, cutoff_hour: int = 12) -> pd.Time
         )
     d_minus_1 = target_date - timedelta(days=1)
     local_cutoff = pd.Timestamp(
-        year=d_minus_1.year, month=d_minus_1.month, day=d_minus_1.day,
-        hour=cutoff_hour, tz="Europe/Paris",
+        year=d_minus_1.year,
+        month=d_minus_1.month,
+        day=d_minus_1.day,
+        hour=cutoff_hour,
+        tz="Europe/Paris",
     )
     return local_cutoff.tz_convert("UTC")
 
@@ -57,6 +61,9 @@ def compute_recent_trend(df: pd.DataFrame, cutoff_hour: int = 12) -> pd.Series:
     never references anything after the cutoff, regardless of which hour of D a row
     belongs to -- recovers the "recent conditions" signal a naive 24h-ago lag would
     have given, without that lag's per-target-hour safety problem (see ADR 0004).
+
+    Propagates `cutoff_instant_for_date`'s `ValueError` for `cutoff_hour=2` (the
+    guarded DST-ambiguous hour); irrelevant here since callers use `cutoff_hour=12`.
     """
     local_dates = df.index.tz_convert("Europe/Paris").normalize()
     unique_dates = local_dates.unique()
@@ -67,9 +74,7 @@ def compute_recent_trend(df: pd.DataFrame, cutoff_hour: int = 12) -> pd.Series:
         window_start_utc = cutoff_utc - pd.Timedelta(hours=23)
         trend_by_date[local_midnight] = df.loc[window_start_utc:cutoff_utc, "consommation"].mean()
 
-    return pd.Series(
-        local_dates.map(trend_by_date).to_numpy(), index=df.index, name="recent_trend"
-    )
+    return pd.Series(local_dates.map(trend_by_date).to_numpy(), index=df.index, name="recent_trend")
 
 
 def build_calendar_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -90,10 +95,16 @@ def build_calendar_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 FEATURE_COLUMNS = [
-    "hour", "day_of_week", "month",
-    "lag_168h", "recent_trend",
-    "temperature_nationale", "est_ferie",
-    "vacances_zone_a", "vacances_zone_b", "vacances_zone_c",
+    "hour",
+    "day_of_week",
+    "month",
+    "lag_168h",
+    "recent_trend",
+    "temperature_nationale",
+    "est_ferie",
+    "vacances_zone_a",
+    "vacances_zone_b",
+    "vacances_zone_c",
 ]
 
 
