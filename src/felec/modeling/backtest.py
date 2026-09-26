@@ -13,6 +13,8 @@ import pandas as pd
 from felec.modeling.baselines import seasonal_naive
 from felec.modeling.features import build_features, cutoff_instant_for_date
 
+# Tuned via grid search against a held-out validation slice (2025-08-16 to
+# 2025-10-15), see notebooks/model_selection.ipynb and ADR 0004.
 DEFAULT_LGBM_PARAMS = {
     "num_leaves": 63,
     "learning_rate": 0.05,

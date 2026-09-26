@@ -90,6 +90,34 @@ def test_walk_forward_backtest_returns_one_row_per_backtest_hour():
     }
 
 
+def test_walk_forward_backtest_passes_lgbm_params_through_to_the_model():
+    from felec.modeling.backtest import walk_forward_backtest
+
+    df = _synthetic_dataset(n_days=20)
+    backtest_start = date(2024, 2, 19)  # last 2 days of the dataset
+    custom_params = {
+        "num_leaves": 7,
+        "learning_rate": 0.2,
+        "n_estimators": 5,
+        "min_child_samples": 3,
+    }
+
+    captured_params = []
+    original_fit = lgb.LGBMRegressor.fit
+
+    def fit_spy(self, X, y, *args, **kwargs):
+        captured_params.append(self.get_params())
+        return original_fit(self, X, y, *args, **kwargs)
+
+    with patch.object(lgb.LGBMRegressor, "fit", fit_spy):
+        walk_forward_backtest(df, backtest_start, cutoff_hour=12, lgbm_params=custom_params)
+
+    assert len(captured_params) == 2  # one retrain per backtest day
+    for params in captured_params:
+        for key, value in custom_params.items():
+            assert params[key] == value
+
+
 def test_walk_forward_backtest_raises_if_backtest_start_before_enough_history():
     from felec.modeling.backtest import walk_forward_backtest
 
