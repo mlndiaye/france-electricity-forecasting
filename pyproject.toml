@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff"]
+dev = ["pytest", "ruff", "jupyter", "matplotlib", "nbformat"]
 
 [project.scripts]
 ingest = "felec.cli:main"
@@ -25,6 +25,7 @@ packages = ["src/felec"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+exclude = ["*.ipynb"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
