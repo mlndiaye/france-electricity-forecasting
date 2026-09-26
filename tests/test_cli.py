@@ -22,3 +22,10 @@ def test_main_dispatches_to_build_dataset(mock_build, monkeypatch):
     monkeypatch.setattr("sys.argv", ["ingest", "build-dataset"])
     main()
     mock_build.assert_called_once()
+
+
+@patch("felec.cli.backtest")
+def test_main_dispatches_to_backtest(mock_backtest, monkeypatch):
+    monkeypatch.setattr("sys.argv", ["ingest", "backtest"])
+    main()
+    mock_backtest.assert_called_once()
