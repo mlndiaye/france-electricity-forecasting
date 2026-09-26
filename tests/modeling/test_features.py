@@ -3,7 +3,13 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from felec.modeling.features import compute_lag_168h, cutoff_instant_for_date
+from felec.modeling.features import (
+    build_calendar_features,
+    build_features,
+    compute_lag_168h,
+    compute_recent_trend,
+    cutoff_instant_for_date,
+)
 
 
 def test_cutoff_instant_for_date_in_winter_is_utc_plus_1():
@@ -73,3 +79,69 @@ def test_compute_lag_168h_is_gap_safe_not_a_positional_shift():
     # Sanity check that a naive positional shift would have gotten this wrong:
     positional_shift_answer = gapped["consommation"].shift(168).loc[target_row[0]]
     assert positional_shift_answer != 112
+
+
+def test_compute_recent_trend_averages_the_24h_window_ending_at_cutoff():
+    # Cutoff for target date 2024-02-03 is 2024-02-02 at 11:00 UTC (noon Paris,
+    # winter). The 24h window ending there is 2024-02-01T12:00 -> 2024-02-02T11:00
+    # UTC inclusive. Build a df spanning several days with a known, distinct value
+    # per hour so the window average is easy to check by hand.
+    index = _hourly_index(24 * 5, start="2024-02-01T00:00")  # 5 days from Feb 1 00:00 UTC
+    df = pd.DataFrame({"consommation": range(24 * 5)}, index=index)
+
+    result = compute_recent_trend(df, cutoff_hour=12)
+
+    window = df.loc["2024-02-01T12:00":"2024-02-02T11:00", "consommation"]
+    assert len(window) == 24
+    expected = window.mean()
+
+    target_rows = result[index.tz_convert("Europe/Paris").normalize() == pd.Timestamp("2024-02-03", tz="Europe/Paris")]
+    assert (target_rows == expected).all()
+
+
+def test_compute_recent_trend_is_nan_when_window_entirely_missing():
+    # The very first day of a dataset has no 24h window before its own cutoff.
+    index = _hourly_index(5, start="2024-02-01T00:00")
+    df = pd.DataFrame({"consommation": range(5)}, index=index)
+
+    result = compute_recent_trend(df, cutoff_hour=12)
+
+    assert result.isna().all()
+
+
+def test_build_calendar_features_uses_paris_local_time():
+    # 2024-02-01T23:00 UTC is 2024-02-02T00:00 in Paris (winter, UTC+1) -- a
+    # different calendar hour/day than the raw UTC value, which is exactly the bug
+    # already found and fixed once in notebooks/exploration.ipynb.
+    index = pd.DatetimeIndex(["2024-02-01T23:00:00+00:00"])
+    df = pd.DataFrame({"consommation": [100]}, index=index)
+
+    result = build_calendar_features(df)
+
+    assert result.iloc[0]["hour"] == 0
+    assert result.iloc[0]["day_of_week"] == 4  # Friday, Feb 2 2024
+
+
+def test_build_features_combines_all_columns():
+    index = _hourly_index(24 * 10, start="2024-02-01T00:00")
+    df = pd.DataFrame(
+        {
+            "consommation": range(24 * 10),
+            "temperature_nationale": [10.0] * (24 * 10),
+            "est_ferie": [False] * (24 * 10),
+            "vacances_zone_a": [False] * (24 * 10),
+            "vacances_zone_b": [False] * (24 * 10),
+            "vacances_zone_c": [False] * (24 * 10),
+        },
+        index=index,
+    )
+
+    result = build_features(df)
+
+    assert set(result.columns) == {
+        "hour", "day_of_week", "month",
+        "lag_168h", "recent_trend",
+        "temperature_nationale", "est_ferie",
+        "vacances_zone_a", "vacances_zone_b", "vacances_zone_c",
+    }
+    assert len(result) == len(df)
