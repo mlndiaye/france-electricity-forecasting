@@ -1,0 +1,63 @@
+from datetime import date
+
+import pandas as pd
+
+from felec.modeling.features import compute_lag_168h, cutoff_instant_for_date
+
+
+def test_cutoff_instant_for_date_in_winter_is_utc_plus_1():
+    # Noon Paris time in winter (CET, UTC+1) is 11:00 UTC. Target date is one day
+    # after the date whose noon we're computing, since the cutoff is on D-1.
+    result = cutoff_instant_for_date(date(2024, 2, 2), cutoff_hour=12)
+    assert result == pd.Timestamp("2024-02-01T11:00:00", tz="UTC")
+
+
+def test_cutoff_instant_for_date_in_summer_is_utc_plus_2():
+    # Noon Paris time in summer (CEST, UTC+2) is 10:00 UTC.
+    result = cutoff_instant_for_date(date(2024, 7, 2), cutoff_hour=12)
+    assert result == pd.Timestamp("2024-07-01T10:00:00", tz="UTC")
+
+
+def test_cutoff_instant_for_date_around_spring_dst_transition():
+    # 2024-03-31 is the spring-forward transition in France (02:00 CET -> 03:00
+    # CEST). Noon that day is unambiguous either way, but only correct if computed
+    # by constructing the hour directly rather than adding a fixed duration to
+    # midnight (which would cross the skipped hour). D-1 here is 2024-03-30, fully
+    # before the transition, still CET (UTC+1).
+    result = cutoff_instant_for_date(date(2024, 3, 31), cutoff_hour=12)
+    assert result == pd.Timestamp("2024-03-30T11:00:00", tz="UTC")
+
+
+def _hourly_index(n_hours: int, start="2024-01-01") -> pd.DatetimeIndex:
+    return pd.date_range(start, periods=n_hours, freq="h", tz="UTC")
+
+
+def test_compute_lag_168h_looks_up_by_time_not_position():
+    # 300 hourly rows, value == row number, so "168h before row N" should equal
+    # value N-168 whenever that timestamp exists in the index.
+    index = _hourly_index(300)
+    df = pd.DataFrame({"consommation": range(300)}, index=index)
+
+    result = compute_lag_168h(df)
+
+    assert result.iloc[280] == 112  # 280 - 168
+    assert pd.isna(result.iloc[100])  # nothing exists 168h before row 100 (< 168)
+
+
+def test_compute_lag_168h_is_gap_safe_not_a_positional_shift():
+    # Drop row 150 (a gap strictly between row 112 and row 280). A naive
+    # `.shift(168)` on the gapped array would look back 168 *rows*, landing one row
+    # short of the correct answer because of the missing row in between. A correct
+    # time-based lookup is unaffected, since the gap sits outside the [112, 280]
+    # window this specific lookup needs.
+    index = _hourly_index(300)
+    df = pd.DataFrame({"consommation": range(300)}, index=index)
+    gapped = df.drop(df.index[150])
+
+    result = compute_lag_168h(gapped)
+
+    target_row = gapped.index[gapped.index == index[280]]
+    assert result.loc[target_row[0]] == 112
+    # Sanity check that a naive positional shift would have gotten this wrong:
+    positional_shift_answer = gapped["consommation"].shift(168).loc[target_row[0]]
+    assert positional_shift_answer != 112
