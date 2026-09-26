@@ -1,6 +1,7 @@
 from datetime import date
 
 import pandas as pd
+import pytest
 
 from felec.modeling.features import compute_lag_168h, cutoff_instant_for_date
 
@@ -28,6 +29,15 @@ def test_cutoff_instant_for_date_around_spring_dst_transition():
     # 2024-03-31T11:00:00Z instead of the correct 2024-03-31T10:00:00Z.
     result = cutoff_instant_for_date(date(2024, 4, 1), cutoff_hour=12)
     assert result == pd.Timestamp("2024-03-31T10:00:00", tz="UTC")
+
+
+def test_cutoff_instant_for_date_rejects_ambiguous_hour():
+    # cutoff_hour=2 lands exactly on the 2:00-2:59 wall-clock hour that's
+    # nonexistent on the spring-forward day and ambiguous (occurs twice) on the
+    # fall-back day. pd.Timestamp(..., hour=2, tz="Europe/Paris") resolves this
+    # silently instead of raising, so the function must guard it explicitly.
+    with pytest.raises(ValueError, match="DST transition"):
+        cutoff_instant_for_date(date(2024, 4, 1), cutoff_hour=2)
 
 
 def _hourly_index(n_hours: int, start="2024-01-01") -> pd.DatetimeIndex:
