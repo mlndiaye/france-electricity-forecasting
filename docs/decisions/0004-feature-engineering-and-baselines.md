@@ -83,9 +83,54 @@ hour of D it's attached to.
 Both require no additional leakage handling: the naive baseline reuses the already-safe
 `lag_168h` feature, and RTE's forecast is already a frozen, published value (ADR 0001).
 
+### No scaling or categorical encoding — a consequence of the model choice, not an omission
+
+Gradient-boosted trees split on thresholds, so they are invariant to monotonic
+transforms of numeric features (no benefit from scaling/standardizing) and handle
+integer/categorical features and missing values natively (no one-hot encoding, no
+manual imputation needed). This is a real advantage of the model choice below, not
+something skipped by oversight. The one real cleaning step: rows with a null
+`consommation` (the documented tail-of-dataset gap) are excluded from training, since
+there is no label to learn from — they are not otherwise imputed or altered.
+
+### Model choice, sanity check, and hyperparameter tuning
+
+**LightGBM is the target model**, not picked arbitrarily now — it was already this
+project's stated plan (`PROJECT_NOTES.md`), and it fits this problem concretely: it
+supports quantile regression natively (directly serving the probabilistic-forecast
+requirement), and gradient-boosted trees are the standard choice for tabular data with
+mixed numeric/categorical features and non-linear relationships (the temperature/
+consumption J-shape, the holiday/vacation confounding — both found in the ADR 0003
+notebook). Re-deriving the model family from scratch via a full multi-algorithm
+comparison was considered and rejected as disproportionate effort for this project's
+timeline (`PROJECT_NOTES.md`: v1 target mid-November 2026) given the concrete reasons
+above — but committing to it *without any check* was also rejected. Two lighter-weight
+verification steps instead:
+
+1. **A sanity check, not a bake-off**: carve the last ~2-3 months off the initial
+   training window as a held-out validation slice (see backtesting protocol below for
+   the exact windows). Train both a default-ish LightGBM and a plain linear regression
+   on the same feature set on the remaining training data, evaluate both on the
+   validation slice. This confirms — on this project's actual data, not by assumption —
+   that gradient boosting earns its added complexity over the simplest reasonable
+   alternative, before investing further effort in it.
+2. **Hyperparameter tuning, once, on the same validation slice** — not skipped, and not
+   re-run inside the daily backtest loop. Search over LightGBM's key hyperparameters
+   (`num_leaves`, `learning_rate`, `n_estimators`, `min_child_samples`) to minimize
+   pinball loss on the validation slice, using the same train/validation split as the
+   sanity check. The resulting hyperparameters are then held fixed for every retrain in
+   the walk-forward backtest — only the training *data* grows day to day, not the
+   hyperparameters. Retuning at every one of the ~365 backtest days would be
+   disproportionate and is not standard practice; a single tuning pass, validated on
+   data the backtest window never touches, avoids leaking backtest information into the
+   tuning decision.
+
 ### Backtesting protocol: daily walk-forward, expanding window
 
-- **Initial training window**: ~2024-02-01 → ~2025-10-15 (~20 months).
+- **Initial training window**: ~2024-02-01 → ~2025-10-15 (~20 months). Split further for
+  the sanity check and tuning above: ~2024-02-01 → ~2025-08-15 (~18 months) to fit on,
+  ~2025-08-16 → ~2025-10-15 (~2 months) as the held-out validation slice. Neither piece
+  overlaps the backtest window below, so tuning never sees backtest data.
 - **Backtest window**: ~2025-10-16 → present (~11-12 months) — meets the "at least one
   full year" requirement already stated in `PROJECT_NOTES.md`.
 - **Mechanics**: for each day D in the backtest window, train on every row strictly
@@ -120,7 +165,15 @@ src/felec/modeling/
 ## Alternatives considered
 
 Covered inline per decision above (waiting for a measured cutoff, 24h/48h lags, a
-single train/test split).
+single train/test split). Also:
+
+- **Full multi-algorithm comparison** (linear/ridge, random forest, LightGBM, XGBoost,
+  each with real tuning) before committing to a model family: more rigorous, but a
+  disproportionate time cost against this project's v1 deadline given LightGBM already
+  has concrete, specific reasons to expect it to fit well here (native quantile
+  support, standard for this data shape). The lighter sanity-check-plus-tuning approach
+  above was chosen instead as the middle ground — not skipping verification entirely,
+  but not re-deriving the model family from zero either.
 
 ## Consequences
 
@@ -133,3 +186,7 @@ single train/test split).
 - `prevision_j` (RTE's same-day updated forecast) remains in the dataset but unused by
   either the model or the baselines, for the same reason `prevision_j1` is excluded from
   model inputs — it is not available at the D-1 cutoff either.
+- If the linear-regression sanity check were ever to *beat* LightGBM on the validation
+  slice, that would be a real, actionable finding — worth stopping to re-examine before
+  proceeding to tuning and the full backtest, not something to override by continuing
+  with LightGBM regardless.
