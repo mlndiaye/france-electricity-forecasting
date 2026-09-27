@@ -10,6 +10,7 @@ import pandas as pd
 from felec.ingestion import calendar as calendar_connector
 from felec.ingestion import rte as rte_connector
 from felec.ingestion import weather as weather_connector
+from felec.ingestion.storage import save_processed
 from felec.modeling.backtest import walk_forward_backtest
 from felec.processing.build_dataset import build_dataset
 
@@ -36,9 +37,9 @@ def backtest() -> None:
     df = pd.read_parquet("data/processed/dataset.parquet")
     df = df.set_index("date_heure").sort_index()
     last_date = df.index.tz_convert("Europe/Paris").normalize().unique().max().date()
-    backtest_start = last_date - timedelta(days=365)
+    backtest_start = last_date - timedelta(days=365)  # ADR 0004: ~11-12 month backtest window
     results = walk_forward_backtest(df, backtest_start=backtest_start)
-    results.to_parquet("data/processed/backtest_results.parquet", index=False)
+    save_processed(results, "backtest_results.parquet")
     print(
         f"Backtest: {len(results)} hourly rows, "
         f"{results['date_heure'].dt.date.nunique()} days, "
