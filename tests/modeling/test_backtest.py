@@ -242,3 +242,33 @@ def test_quantile_backtest_raises_if_backtest_start_before_enough_history():
 
     with pytest.raises(ValueError, match="not enough training history"):
         quantile_backtest(df, backtest_start, quantiles=(0.1, 0.9), cutoff_hour=12)
+
+
+def test_quantile_backtest_passes_lgbm_params_through_to_the_model():
+    from felec.modeling.backtest import quantile_backtest
+
+    df = _synthetic_dataset(n_days=20)
+    backtest_start = date(2024, 2, 19)  # last 2 days of the dataset
+    custom_params = {
+        "num_leaves": 7,
+        "learning_rate": 0.2,
+        "n_estimators": 5,
+        "min_child_samples": 3,
+    }
+
+    captured_params = []
+    original_fit = lgb.LGBMRegressor.fit
+
+    def fit_spy(self, X, y, *args, **kwargs):
+        captured_params.append(self.get_params())
+        return original_fit(self, X, y, *args, **kwargs)
+
+    with patch.object(lgb.LGBMRegressor, "fit", fit_spy):
+        quantile_backtest(
+            df, backtest_start, quantiles=(0.1, 0.9), cutoff_hour=12, lgbm_params=custom_params
+        )
+
+    assert len(captured_params) == 4  # 2 backtest days x 2 quantiles
+    for params in captured_params:
+        for key, value in custom_params.items():
+            assert params[key] == value
