@@ -83,8 +83,8 @@ documented (see ADR 0001).
 
 - Orchestrator for v2 (Airflow vs lighter options) — to be justified when v2 starts
 - Dashboard technology — same
-- Exact forecast cutoff hour — still to be pinned down empirically during feature
-  engineering (RTE resolution consistency is now resolved, see Data sources above)
+- A live-monitoring check to confirm or correct the assumed 12:00 forecast cutoff hour
+  (see `docs/decisions/0004-feature-engineering-and-baselines.md`)
 
 ## Known data gaps (found during the first real backfill, 2026-09-25)
 
@@ -97,5 +97,10 @@ documented limitation, not a blocker.
 
 ## Current phase
 
-Ingestion pipeline (v1) and exploratory analysis notebook are built, tested, and
-verified against real data end-to-end. Next: baselines and modeling.
+Ingestion pipeline, exploratory analysis, feature engineering, baselines, and a daily
+walk-forward backtest are built, tested, and verified against real data end-to-end (see
+`docs/decisions/0004-feature-engineering-and-baselines.md` for the full design and
+result). Real backtest over 2025-10-16→2026-09-26 (347 days): model MAE 1286 MW vs.
+seasonal-naive MAE 3654 MW vs. RTE's own day-ahead forecast MAE 1298 MW — the model
+clears the naive baseline decisively and essentially matches RTE. Next: error analysis
+by day type, then probabilistic/multi-quantile forecasting.

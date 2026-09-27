@@ -191,6 +191,26 @@ single train/test split). Also:
   above was chosen instead as the middle ground — not skipping verification entirely,
   but not re-deriving the model family from zero either.
 
+## Result
+
+The real walk-forward backtest (`uv run ingest backtest`), run over the fixed window
+2025-10-16 → 2026-09-26 (347 days, 8,303 hourly rows — a handful of hours short of
+347×24 due to the documented DST/publish-lag gaps and a partially-ingested trailing
+day), gives:
+
+| Series      | MAE (MW) |
+|-------------|----------|
+| Model       | 1286.25  |
+| Seasonal naive | 3654.23 |
+| RTE `prevision_j1` | 1298.43 |
+
+The model clears the naive baseline by a wide margin (~65% MAE reduction) and edges out
+RTE's own day-ahead forecast by about 1%, essentially matching it. Given the stated goal
+was never to "beat RTE" but to build a rigorous, honest system, matching it at this
+early stage — with a single median-quantile LightGBM model, no error-by-day-type
+tuning yet, and no probabilistic calibration — is a solid result to build on, not a
+final verdict.
+
 ## Consequences
 
 - The cutoff hour (12:00) is a documented assumption, not a measured fact — flagged
