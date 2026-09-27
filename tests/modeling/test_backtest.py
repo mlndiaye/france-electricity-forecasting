@@ -149,3 +149,96 @@ def test_walk_forward_backtest_raises_if_backtest_start_before_enough_history():
 
     with pytest.raises(ValueError, match="not enough training history"):
         walk_forward_backtest(df, backtest_start, cutoff_hour=12)
+
+
+def test_quantile_backtest_respects_the_cutoff_boundary():
+    from felec.modeling.backtest import quantile_backtest
+
+    df = _synthetic_dataset(n_days=20)
+    backtest_start = date(2024, 2, 19)  # last 2 days of the dataset
+
+    captured_indices = []
+    original_fit = lgb.LGBMRegressor.fit
+
+    def fit_spy(self, X, y, *args, **kwargs):
+        captured_indices.append(X.index)
+        return original_fit(self, X, y, *args, **kwargs)
+
+    with patch.object(lgb.LGBMRegressor, "fit", fit_spy):
+        quantile_backtest(df, backtest_start, quantiles=(0.1, 0.9), cutoff_hour=12)
+
+    assert len(captured_indices) == 4  # 2 backtest days x 2 quantiles
+
+    expected_days = [
+        date(2024, 2, 19),
+        date(2024, 2, 19),
+        date(2024, 2, 20),
+        date(2024, 2, 20),
+    ]
+    for day, train_index in zip(expected_days, captured_indices, strict=True):
+        cutoff = cutoff_instant_for_date(day, cutoff_hour=12)
+        assert (train_index < cutoff).all()
+
+
+def test_quantile_backtest_trains_one_model_per_quantile_per_day():
+    from felec.modeling.backtest import quantile_backtest
+
+    df = _synthetic_dataset(n_days=20)
+    backtest_start = date(2024, 2, 19)  # last 2 days of the dataset
+
+    captured_alphas = []
+    original_fit = lgb.LGBMRegressor.fit
+
+    def fit_spy(self, X, y, *args, **kwargs):
+        captured_alphas.append(self.get_params()["alpha"])
+        return original_fit(self, X, y, *args, **kwargs)
+
+    with patch.object(lgb.LGBMRegressor, "fit", fit_spy):
+        quantile_backtest(df, backtest_start, quantiles=(0.1, 0.9), cutoff_hour=12)
+
+    assert captured_alphas == [0.1, 0.9, 0.1, 0.9]
+
+
+def test_quantile_backtest_returns_one_row_per_backtest_hour_with_quantile_columns():
+    from felec.modeling.backtest import quantile_backtest
+
+    df = _synthetic_dataset(n_days=20)
+    backtest_start = date(2024, 2, 19)  # last 2 days of the dataset
+
+    result = quantile_backtest(df, backtest_start, quantiles=(0.1, 0.9), cutoff_hour=12)
+
+    assert len(result) == 2 * 24
+    assert set(result.columns) == {"date_heure", "q10_pred", "q90_pred"}
+
+
+def test_quantile_backtest_excludes_rows_with_null_consommation_from_training():
+    from felec.modeling.backtest import quantile_backtest
+
+    df = _synthetic_dataset(n_days=20)
+    backtest_start = date(2024, 2, 19)  # last 2 days of the dataset
+    gap_timestamp = df.index[100]  # a timestamp well inside the training history
+    df.loc[gap_timestamp, "consommation"] = np.nan
+
+    captured_indices = []
+    original_fit = lgb.LGBMRegressor.fit
+
+    def fit_spy(self, X, y, *args, **kwargs):
+        captured_indices.append(X.index)
+        assert not y.isna().any()
+        return original_fit(self, X, y, *args, **kwargs)
+
+    with patch.object(lgb.LGBMRegressor, "fit", fit_spy):
+        quantile_backtest(df, backtest_start, quantiles=(0.1, 0.9), cutoff_hour=12)
+
+    for train_index in captured_indices:
+        assert gap_timestamp not in train_index
+
+
+def test_quantile_backtest_raises_if_backtest_start_before_enough_history():
+    from felec.modeling.backtest import quantile_backtest
+
+    df = _synthetic_dataset(n_days=20)
+    backtest_start = date(2024, 2, 1)  # the dataset's very first day -- no prior history
+
+    with pytest.raises(ValueError, match="not enough training history"):
+        quantile_backtest(df, backtest_start, quantiles=(0.1, 0.9), cutoff_hour=12)
