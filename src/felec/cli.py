@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import argparse
-from datetime import UTC, date, datetime, timedelta
-
-import pandas as pd
+from datetime import UTC, date, datetime
 
 from felec.ingestion import calendar as calendar_connector
 from felec.ingestion import rte as rte_connector
 from felec.ingestion import weather as weather_connector
-from felec.ingestion.storage import save_processed
+from felec.ingestion.storage import load_processed, save_processed
 from felec.modeling.backtest import walk_forward_backtest
 from felec.processing.build_dataset import build_dataset
 
@@ -18,6 +16,12 @@ from felec.processing.build_dataset import build_dataset
 # Previous Runs API (verified by binary search against the live API,
 # 2026-09-25) -- see docs/decisions/0001-problem-definition-scope-and-weather-window.md
 STUDY_WINDOW_START = date(2024, 2, 1)
+
+# Fixed backtest start, not a rolling window -- must not drift onto or before
+# 2025-10-15, the end of the hyperparameter-tuning validation slice (2025-08-16 ->
+# 2025-10-15), or backtest results would be contaminated by the same data used to
+# select DEFAULT_LGBM_PARAMS. See docs/decisions/0004-feature-engineering-and-baselines.md.
+BACKTEST_START = date(2025, 10, 16)
 
 
 def backfill() -> None:
@@ -34,11 +38,9 @@ def refresh() -> None:
 
 
 def backtest() -> None:
-    df = pd.read_parquet("data/processed/dataset.parquet")
+    df = load_processed("dataset.parquet")
     df = df.set_index("date_heure").sort_index()
-    last_date = df.index.tz_convert("Europe/Paris").normalize().unique().max().date()
-    backtest_start = last_date - timedelta(days=365)  # ADR 0004: ~11-12 month backtest window
-    results = walk_forward_backtest(df, backtest_start=backtest_start)
+    results = walk_forward_backtest(df, backtest_start=BACKTEST_START)
     save_processed(results, "backtest_results.parquet")
     print(
         f"Backtest: {len(results)} hourly rows, "
