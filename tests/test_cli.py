@@ -29,3 +29,10 @@ def test_main_dispatches_to_backtest(mock_backtest, monkeypatch):
     monkeypatch.setattr("sys.argv", ["ingest", "backtest"])
     main()
     mock_backtest.assert_called_once()
+
+
+@patch("felec.cli.quantile_backtest")
+def test_main_dispatches_to_quantile_backtest(mock_quantile_backtest, monkeypatch):
+    monkeypatch.setattr("sys.argv", ["ingest", "quantile-backtest"])
+    main()
+    mock_quantile_backtest.assert_called_once()

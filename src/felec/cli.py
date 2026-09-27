@@ -9,6 +9,7 @@ from felec.ingestion import calendar as calendar_connector
 from felec.ingestion import rte as rte_connector
 from felec.ingestion import weather as weather_connector
 from felec.ingestion.storage import load_processed, save_processed
+from felec.modeling.backtest import quantile_backtest as run_quantile_backtest
 from felec.modeling.backtest import walk_forward_backtest
 from felec.processing.build_dataset import build_dataset
 
@@ -49,6 +50,18 @@ def backtest() -> None:
     )
 
 
+def quantile_backtest() -> None:
+    df = load_processed("dataset.parquet")
+    df = df.set_index("date_heure").sort_index()
+    results = run_quantile_backtest(df, backtest_start=BACKTEST_START)
+    save_processed(results, "quantile_backtest_results.parquet")
+    print(
+        f"Quantile backtest: {len(results)} hourly rows, "
+        f"{results['date_heure'].dt.date.nunique()} days, "
+        f"saved to data/processed/quantile_backtest_results.parquet"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="ingest")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -56,6 +69,7 @@ def main() -> None:
     subparsers.add_parser("refresh")
     subparsers.add_parser("build-dataset")
     subparsers.add_parser("backtest")
+    subparsers.add_parser("quantile-backtest")
 
     args = parser.parse_args()
 
@@ -67,6 +81,8 @@ def main() -> None:
         build_dataset()
     elif args.command == "backtest":
         backtest()
+    elif args.command == "quantile-backtest":
+        quantile_backtest()
 
 
 if __name__ == "__main__":
