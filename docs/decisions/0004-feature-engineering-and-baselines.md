@@ -87,11 +87,18 @@ Both require no additional leakage handling: the naive baseline reuses the alrea
 
 Gradient-boosted trees split on thresholds, so they are invariant to monotonic
 transforms of numeric features (no benefit from scaling/standardizing) and handle
-integer/categorical features and missing values natively (no one-hot encoding, no
-manual imputation needed). This is a real advantage of the model choice below, not
-something skipped by oversight. The one real cleaning step: rows with a null
-`consommation` (the documented tail-of-dataset gap) are excluded from training, since
-there is no label to learn from — they are not otherwise imputed or altered.
+missing values natively (no manual imputation needed). This is a real advantage of the
+model choice below, not something skipped by oversight. The one real cleaning step:
+rows with a null `consommation` (the documented tail-of-dataset gap) are excluded from
+training, since there is no label to learn from — they are not otherwise imputed or
+altered.
+
+Note: `hour`, `day_of_week`, and `month` are passed as plain integer columns, not as
+pandas `category` dtype, and `categorical_feature` is never set on `LGBMRegressor`.
+LightGBM therefore treats them as ordinary ordinal numerics rather than using its
+native categorical splitting — trees can still approximate the cyclic patterns via
+repeated splits, but this is a weaker treatment than "native categorical handling"
+implies. Worth revisiting if calendar features turn out to be a limiting factor.
 
 ### Model choice, sanity check, and hyperparameter tuning
 
@@ -124,6 +131,15 @@ verification steps instead:
    disproportionate and is not standard practice; a single tuning pass, validated on
    data the backtest window never touches, avoids leaking backtest information into the
    tuning decision.
+
+Note: the notebook's tuning data additionally drops rows missing `lag_168h` (the first
+~7-8 days of the study window, before a 168h lag exists) before fitting either model.
+The production walk-forward backtest does not apply this same filter — it only excludes
+rows with a null `consommation` target — so each retrain's training set includes a
+handful of early rows with a null `lag_168h` that the tuning process never saw. LightGBM
+handles this natively and the affected row count is negligible against ~20 months of
+history, but it is a real, if small, discrepancy between what was tuned and what runs in
+production, noted here rather than left invisible.
 
 ### Backtesting protocol: daily walk-forward, expanding window
 
