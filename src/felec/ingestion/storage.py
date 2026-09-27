@@ -1,4 +1,5 @@
 """Read/write helpers for the local Parquet data lake."""
+
 import os
 import tempfile
 from pathlib import Path
@@ -55,3 +56,8 @@ def save_processed(df: pd.DataFrame, filename: str) -> None:
     """Write df to data/processed/<filename>, overwriting any existing file."""
     path = PROCESSED_DIR / filename
     _atomic_write_parquet(df, path)
+
+
+def load_processed(filename: str) -> pd.DataFrame:
+    """Read data/processed/<filename>."""
+    return pd.read_parquet(PROCESSED_DIR / filename)

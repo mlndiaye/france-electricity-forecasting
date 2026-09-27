@@ -72,6 +72,29 @@ def test_walk_forward_backtest_respects_the_cutoff_boundary():
         assert (train_index < cutoff).all()
 
 
+def test_walk_forward_backtest_excludes_rows_with_null_consommation_from_training():
+    from felec.modeling.backtest import walk_forward_backtest
+
+    df = _synthetic_dataset(n_days=20)
+    backtest_start = date(2024, 2, 19)  # last 2 days of the dataset
+    gap_timestamp = df.index[100]  # a timestamp well inside the training history
+    df.loc[gap_timestamp, "consommation"] = np.nan
+
+    captured_indices = []
+    original_fit = lgb.LGBMRegressor.fit
+
+    def fit_spy(self, X, y, *args, **kwargs):
+        captured_indices.append(X.index)
+        assert not y.isna().any()
+        return original_fit(self, X, y, *args, **kwargs)
+
+    with patch.object(lgb.LGBMRegressor, "fit", fit_spy):
+        walk_forward_backtest(df, backtest_start, cutoff_hour=12)
+
+    for train_index in captured_indices:
+        assert gap_timestamp not in train_index
+
+
 def test_walk_forward_backtest_returns_one_row_per_backtest_hour():
     from felec.modeling.backtest import walk_forward_backtest
 
