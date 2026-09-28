@@ -9,6 +9,7 @@ from collections.abc import Iterator
 from datetime import date, timedelta
 
 import lightgbm as lgb
+import numpy as np
 import pandas as pd
 
 from felec.modeling.baselines import seasonal_naive
@@ -110,22 +111,35 @@ def quantile_backtest(
     hours at each quantile level. Returns one row per backtest hour, with one
     column per quantile (e.g. q10_pred, q90_pred). Shares the same
     walk-forward mechanics as walk_forward_backtest -- see ADR 0006.
+
+    Each quantile is trained as an independent model, so nothing guarantees
+    their raw predictions come out in order (e.g. the q10 model can predict
+    higher than the q90 model for a given hour -- "quantile crossing", a known
+    property of independently-trained quantile regressors). Each row's
+    predictions are sorted across quantile levels before being assigned back
+    to their columns, the standard fix (Chernozhukov et al. 2010) -- see ADR
+    0006.
     """
     params = lgbm_params if lgbm_params is not None else DEFAULT_LGBM_PARAMS
     features = build_features(df, cutoff_hour=cutoff_hour)
+    sorted_quantiles = sorted(quantiles)
 
     rows = []
     for current, train_features, train_target, day_features, day_mask in _iter_backtest_days(
         df, features, backtest_start, cutoff_hour
     ):
-        day_row: dict[str, object] = {"date_heure": df.index[day_mask]}
-        for q in quantiles:
+        predictions = {}
+        for q in sorted_quantiles:
             model = lgb.LGBMRegressor(
                 objective="quantile", alpha=q, random_state=0, verbosity=-1, **params
             )
             model.fit(train_features, train_target)
-            column = f"q{round(q * 100)}_pred"
-            day_row[column] = model.predict(day_features)
+            predictions[q] = model.predict(day_features)
+
+        stacked = np.sort(np.column_stack([predictions[q] for q in sorted_quantiles]), axis=1)
+        day_row: dict[str, object] = {"date_heure": df.index[day_mask]}
+        for i, q in enumerate(sorted_quantiles):
+            day_row[f"q{round(q * 100)}_pred"] = stacked[:, i]
 
         rows.append(pd.DataFrame(day_row))
 

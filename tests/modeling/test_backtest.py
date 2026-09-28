@@ -272,3 +272,29 @@ def test_quantile_backtest_passes_lgbm_params_through_to_the_model():
     for params in captured_params:
         for key, value in custom_params.items():
             assert params[key] == value
+
+
+def test_quantile_backtest_sorts_crossed_quantile_predictions():
+    from felec.modeling.backtest import quantile_backtest
+
+    df = _synthetic_dataset(n_days=20)
+    backtest_start = date(2024, 2, 19)  # last 2 days of the dataset
+
+    original_predict = lgb.LGBMRegressor.predict
+    call_count = {"n": 0}
+
+    def predict_spy(self, X, *args, **kwargs):
+        result = original_predict(self, X, *args, **kwargs)
+        call_count["n"] += 1
+        # Force the q0.1 model's predictions artificially far above the q0.9
+        # model's, to simulate real-world quantile crossing regardless of what
+        # these particular models would naturally have predicted.
+        if call_count["n"] % 2 == 1:  # q0.1 call (sorted_quantiles processes 0.1 first)
+            return result + 100_000
+        return result  # q0.9 call, left alone
+
+    with patch.object(lgb.LGBMRegressor, "predict", predict_spy):
+        result = quantile_backtest(df, backtest_start, quantiles=(0.1, 0.9), cutoff_hour=12)
+
+    assert call_count["n"] == 4  # 2 backtest days x 2 quantiles
+    assert (result["q10_pred"] <= result["q90_pred"]).all()
