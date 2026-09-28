@@ -154,5 +154,10 @@ breakdown). Also:
   overconfident), that is a real, reportable finding — consistent with this project's
   standard of reporting honestly rather than only when results are flattering — and would
   be a natural motivation to revisit conformal prediction later, not something to hide.
+  **This is exactly what happened**: the real backtest's empirical coverage is 55.1%
+  (roughly symmetric miss — 25.0% of hours above `q90_pred`, 19.8% below `q10_pred`), well
+  under the 80% target. See `notebooks/probabilistic_evaluation.ipynb` for the full
+  breakdown. Conformal prediction, rejected above for complexity reasons, is now the
+  concretely motivated next step rather than a hypothetical one.
 - Hyperparameters shared across quantiles are a documented simplification, not a proven
   optimum for the tail quantiles specifically.

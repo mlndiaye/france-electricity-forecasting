@@ -97,10 +97,30 @@ documented limitation, not a blocker.
 
 ## Current phase
 
-Ingestion pipeline, exploratory analysis, feature engineering, baselines, and a daily
-walk-forward backtest are built, tested, and verified against real data end-to-end (see
-`docs/decisions/0004-feature-engineering-and-baselines.md` for the full design and
-result). Real backtest over 2025-10-16→2026-09-26 (347 days): model MAE 1286 MW vs.
-seasonal-naive MAE 3654 MW vs. RTE's own day-ahead forecast MAE 1298 MW — the model
-clears the naive baseline decisively and essentially matches RTE. Next: error analysis
-by day type, then probabilistic/multi-quantile forecasting.
+Ingestion pipeline, exploratory analysis, feature engineering, baselines, a daily
+walk-forward backtest, error analysis by day type, and a first probabilistic (multi-
+quantile) forecast are all built, tested, and verified against real data end-to-end.
+
+- **Point forecast** (`docs/decisions/0004-feature-engineering-and-baselines.md`): real
+  backtest over 2025-10-16→2026-09-26 (347 days), model MAE 1286 MW vs. seasonal-naive MAE
+  3654 MW vs. RTE's own day-ahead forecast MAE 1298 MW — the model clears the naive
+  baseline decisively and essentially matches RTE.
+- **Error analysis by day type** (`docs/decisions/0005-error-analysis-by-day-type.md`):
+  the model matches or beats RTE almost everywhere (notably on public holidays and in
+  Spring), but is clearly worse than RTE on cold days (2760 MW vs. 1764 MW MAE) — a real,
+  documented limitation attributed to few cold-day examples in the backtest history.
+- **Probabilistic forecast** (`docs/decisions/0006-probabilistic-forecasting.md`): an 80%
+  prediction interval (LightGBM quantile regression at 0.1/0.9, alongside the existing 0.5
+  median). The real backtest empirical coverage is **55.1%**, well below the 80% target —
+  the interval is meaningfully overconfident (roughly symmetric: actual demand exceeds the
+  upper bound 25.0% of the time, falls below the lower bound 19.8% of the time). A real,
+  honestly-reported limitation, not swept under the rug: the natural next step is
+  conformal prediction (rejected earlier for complexity, now motivated by this result).
+
+**Known limitation**: the current 80% prediction interval is not well-calibrated (55.1%
+real coverage). Point-forecast numbers above are unaffected by this — it's specific to the
+interval, not the median prediction.
+
+Next: v1's planned scope is otherwise complete; remaining work is either portfolio polish
+(README, results summary) or a follow-up phase on conformal prediction to fix the
+interval's calibration.
