@@ -128,7 +128,7 @@ def quantile_backtest(
     for current, train_features, train_target, day_features, day_mask in _iter_backtest_days(
         df, features, backtest_start, cutoff_hour
     ):
-        predictions = {}
+        predictions: dict[float, np.ndarray] = {}
         for q in sorted_quantiles:
             model = lgb.LGBMRegressor(
                 objective="quantile", alpha=q, random_state=0, verbosity=-1, **params

@@ -9,6 +9,9 @@ from felec.ingestion import calendar as calendar_connector
 from felec.ingestion import rte as rte_connector
 from felec.ingestion import weather as weather_connector
 from felec.ingestion.storage import load_processed, save_processed
+
+# Aliased to avoid being shadowed by the CLI-level quantile_backtest() below
+# (importing it under its own name would make that function call itself).
 from felec.modeling.backtest import quantile_backtest as run_quantile_backtest
 from felec.modeling.backtest import walk_forward_backtest
 from felec.processing.build_dataset import build_dataset

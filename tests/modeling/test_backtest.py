@@ -298,3 +298,16 @@ def test_quantile_backtest_sorts_crossed_quantile_predictions():
 
     assert call_count["n"] == 4  # 2 backtest days x 2 quantiles
     assert (result["q10_pred"] <= result["q90_pred"]).all()
+
+
+def test_quantile_backtest_handles_more_than_two_out_of_order_quantiles():
+    from felec.modeling.backtest import quantile_backtest
+
+    df = _synthetic_dataset(n_days=20)
+    backtest_start = date(2024, 2, 19)  # last 2 days of the dataset
+
+    result = quantile_backtest(df, backtest_start, quantiles=(0.9, 0.1, 0.5), cutoff_hour=12)
+
+    assert set(result.columns) == {"date_heure", "q10_pred", "q50_pred", "q90_pred"}
+    assert (result["q10_pred"] <= result["q50_pred"]).all()
+    assert (result["q50_pred"] <= result["q90_pred"]).all()
