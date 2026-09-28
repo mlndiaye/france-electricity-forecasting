@@ -79,6 +79,29 @@ rename `model_pred` to something like `q50_pred`. Would touch an already-reviewe
 merged, and depended-upon function and its output schema for no functional benefit here —
 additive is safer than modify-in-place for work that's already shipped.
 
+### A real finding: quantile crossing, fixed by sorting per row
+
+The first real run of `quantile_backtest` against the full dataset found 41 of 8,303 rows
+(0.49%) where the q0.1 model's prediction exceeded the q0.9 model's — an inverted
+interval. This is a known property of independently-trained quantile regressors: nothing
+in training a `LGBMRegressor(objective="quantile", alpha=0.1)` and a separate
+`LGBMRegressor(objective="quantile", alpha=0.9)` constrains their outputs to agree on
+which is larger for any given row, since each model minimizes its own pinball loss with
+no awareness of the other.
+
+The fix: sort each row's predictions across quantile levels before assigning them back to
+columns (the standard "rearrangement" approach, Chernozhukov, Fernández-Val, and Galichon,
+2010). This guarantees `q10_pred <= q90_pred` for every row by construction, without
+retraining — it only reorders each row's already-computed predictions. Verified with a
+dedicated test that deliberately forces a crossing (via a mocked `predict`) and confirms
+the function corrects it.
+
+Rejected: leaving the 0.49% of crossed rows as-is and excluding them from the coverage
+evaluation. Would avoid touching the model code, but leaves a real, avoidable defect in
+the function's contract (an interval whose "lower" bound exceeds its "upper" bound is not
+a valid interval at all) for a one-line, well-established fix — not proportionate to skip
+here.
+
 ### Evaluation: coverage and interval width, not a per-category breakdown
 
 A new notebook, `notebooks/probabilistic_evaluation.ipynb`, joins the two results files on
