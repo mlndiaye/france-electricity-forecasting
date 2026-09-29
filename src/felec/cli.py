@@ -67,6 +67,7 @@ def quantile_backtest() -> None:
 
 
 def daily_forecast() -> None:
+    """Hits real RTE/Open-Meteo APIs on every call (via refresh()); no offline mode."""
     refresh()
     df = build_dataset()
     df = df.set_index("date_heure").sort_index()
