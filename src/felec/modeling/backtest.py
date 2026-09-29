@@ -100,6 +100,21 @@ def walk_forward_backtest(
     return pd.concat(rows, ignore_index=True)
 
 
+def sorted_quantile_columns(
+    predictions: dict[float, np.ndarray], sorted_quantiles: list[float]
+) -> dict[str, np.ndarray]:
+    """Sort each row's predictions across quantile levels before assigning
+    them to their named columns (e.g. q10_pred, q90_pred), so q10 <= q50 <=
+    q90 holds by construction even though each quantile was trained as an
+    independent model -- the standard fix for "quantile crossing"
+    (Chernozhukov et al. 2010). Shared by quantile_backtest and
+    forecast.predict_next_day so the fix lives in one place -- see ADR 0006
+    and ADR 0007.
+    """
+    stacked = np.sort(np.column_stack([predictions[q] for q in sorted_quantiles]), axis=1)
+    return {f"q{round(q * 100)}_pred": stacked[:, i] for i, q in enumerate(sorted_quantiles)}
+
+
 def quantile_backtest(
     df: pd.DataFrame,
     backtest_start: date,
@@ -113,12 +128,7 @@ def quantile_backtest(
     walk-forward mechanics as walk_forward_backtest -- see ADR 0006.
 
     Each quantile is trained as an independent model, so nothing guarantees
-    their raw predictions come out in order (e.g. the q10 model can predict
-    higher than the q90 model for a given hour -- "quantile crossing", a known
-    property of independently-trained quantile regressors). Each row's
-    predictions are sorted across quantile levels before being assigned back
-    to their columns, the standard fix (Chernozhukov et al. 2010) -- see ADR
-    0006.
+    their raw predictions come out in order -- see sorted_quantile_columns.
     """
     params = lgbm_params if lgbm_params is not None else DEFAULT_LGBM_PARAMS
     features = build_features(df, cutoff_hour=cutoff_hour)
@@ -136,10 +146,8 @@ def quantile_backtest(
             model.fit(train_features, train_target)
             predictions[q] = model.predict(day_features)
 
-        stacked = np.sort(np.column_stack([predictions[q] for q in sorted_quantiles]), axis=1)
         day_row: dict[str, object] = {"date_heure": df.index[day_mask]}
-        for i, q in enumerate(sorted_quantiles):
-            day_row[f"q{round(q * 100)}_pred"] = stacked[:, i]
+        day_row.update(sorted_quantile_columns(predictions, sorted_quantiles))
 
         rows.append(pd.DataFrame(day_row))
 
