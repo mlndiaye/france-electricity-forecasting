@@ -6,3 +6,7 @@ __pycache__/
 *.pyc
 .venv/
 .ruff_cache/
+airflow/.env
+airflow/logs/
+airflow/plugins/
+airflow/config/
