@@ -113,10 +113,37 @@ uv run ruff check .  # lint
 uv run ruff format .
 ```
 
+## Scheduling (Airflow, local)
+
+The daily forecast pipeline (`refresh` → `build-dataset` → `predict`) can run
+automatically once a day via a local Airflow instance — see
+[ADR 0008](docs/decisions/0008-airflow-daily-scheduling.md) for why Airflow (not a
+lighter local scheduler) and why local (not cloud) for now, including the honest
+limitation this implies: if this machine is asleep or off at 16:00 Paris time, that
+day's forecast is simply not produced.
+
+```bash
+cd airflow
+cp .env.example .env
+# Generate a real FERNET_KEY and paste it into .env:
+python3 -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+
+docker compose up -d
+# Wait for airflow-apiserver to report healthy, then:
+docker compose exec airflow-scheduler airflow dags unpause daily_forecast
+```
+
+The Airflow UI is then at http://localhost:8080 (default login: `airflow` / `airflow` —
+this is a local-only, non-production setup; do not reuse these credentials anywhere
+real). The DAG runs daily at 16:00 Europe/Paris with 3 tasks (`refresh`, `build_dataset`,
+`predict`) and 1 retry per task. Note: a DAG stays paused by default — a manually
+triggered run on a paused DAG is created but never executes (it sits in `queued`
+forever), so the `unpause` step above is required, not optional.
+
 ## Tech stack
 
 Python 3.12 · `uv` · pandas · LightGBM · scikit-learn · pandera (data validation) ·
-pytest · ruff · Jupyter / matplotlib
+pytest · ruff · Jupyter / matplotlib · Airflow (local scheduling)
 
 ## Project status
 
@@ -125,14 +152,15 @@ naive + RTE baselines, LightGBM point forecast, daily walk-forward backtest over
 year, error analysis by day type, and a first probabilistic forecast (multi-quantile
 LightGBM) — all built, tested, and verified against real data end-to-end.
 
-**v2 (in progress)**: a first slice is shipped — `ingest daily-forecast` chains real data
-refresh, dataset rebuild, model retraining, and prediction into a single command,
-verified end-to-end against the live RTE and Open-Meteo APIs (see
-[ADR 0007](docs/decisions/0007-daily-forecast-pipeline.md)). Still ahead: scheduling this
-to actually run automatically (Airflow vs. a lighter alternative — an open decision, not
-yet made), a model registry and drift monitoring (MLflow), a serving API and simple
-dashboard (FastAPI) comparing forecast vs. RTE vs. actual, and an extension estimating the
-probability of an RTE "Tempo" red day from the probabilistic forecast.
+**v2 (in progress)**: `ingest daily-forecast` chains real data refresh, dataset rebuild,
+model retraining, and prediction into a single command, verified end-to-end against the
+live RTE and Open-Meteo APIs (see
+[ADR 0007](docs/decisions/0007-daily-forecast-pipeline.md)). This pipeline now also runs
+automatically once a day via a local Airflow instance (see
+[ADR 0008](docs/decisions/0008-airflow-daily-scheduling.md) and the Scheduling section
+above). Still ahead: a model registry and drift monitoring (MLflow), a serving API and
+simple dashboard (FastAPI) comparing forecast vs. RTE vs. actual, and an extension
+estimating the probability of an RTE "Tempo" red day from the probabilistic forecast.
 
 ## Engineering standards
 
