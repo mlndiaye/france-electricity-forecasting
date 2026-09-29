@@ -66,8 +66,8 @@ def test_predict_next_day_returns_one_row_per_target_day_hour_with_quantile_colu
 
     result = predict_next_day(df, target_date, cutoff_hour=12, quantiles=(0.1, 0.5, 0.9))
 
-    assert len(result) == 24
-    assert set(result.columns) == {
+    assert len(result.predictions) == 24
+    assert set(result.predictions.columns) == {
         "date_heure",
         "q10_pred",
         "q50_pred",
@@ -98,8 +98,8 @@ def test_predict_next_day_sorts_crossed_quantile_predictions():
         result = predict_next_day(df, target_date, cutoff_hour=12, quantiles=(0.1, 0.5, 0.9))
 
     assert call_count["n"] == 3
-    assert (result["q10_pred"] <= result["q50_pred"]).all()
-    assert (result["q50_pred"] <= result["q90_pred"]).all()
+    assert (result.predictions["q10_pred"] <= result.predictions["q50_pred"]).all()
+    assert (result.predictions["q50_pred"] <= result.predictions["q90_pred"]).all()
 
 
 def test_predict_next_day_passes_lgbm_params_through_to_the_model():
@@ -144,3 +144,25 @@ def test_predict_next_day_raises_if_target_date_not_in_dataset():
 
     with pytest.raises(ValueError, match="no rows found"):
         predict_next_day(df, target_date, cutoff_hour=12)
+
+
+def test_predict_next_day_returns_the_trained_models_and_actual_params_used():
+    df = _synthetic_dataset(n_days=20)
+    target_date = date(2024, 2, 20)
+    custom_params = {
+        "num_leaves": 7,
+        "learning_rate": 0.2,
+        "n_estimators": 5,
+        "min_child_samples": 3,
+    }
+
+    result = predict_next_day(
+        df, target_date, cutoff_hour=12, quantiles=(0.1, 0.5, 0.9), lgbm_params=custom_params
+    )
+
+    assert set(result.models.keys()) == {0.1, 0.5, 0.9}
+    for model in result.models.values():
+        assert isinstance(model, lgb.LGBMRegressor)
+    assert result.params == custom_params
+    assert result.cutoff_hour == 12
+    assert result.n_train_rows > 0
