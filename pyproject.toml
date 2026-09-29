@@ -9,6 +9,7 @@ dependencies = [
     "pyarrow",
     "lightgbm",
     "scikit-learn",
+    "mlflow",
 ]
 
 [project.optional-dependencies]
