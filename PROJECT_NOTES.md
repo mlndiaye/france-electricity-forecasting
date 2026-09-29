@@ -81,8 +81,7 @@ documented (see ADR 0001).
 
 ## Open decisions (deferred, not blocking v1 start)
 
-- Orchestrator for v2 (Airflow vs lighter options) — to be justified when v2 starts
-- Dashboard technology — same
+- Dashboard technology — to be justified when that slice of v2 starts
 - A live-monitoring check to confirm or correct the assumed 12:00 forecast cutoff hour
   (see `docs/decisions/0004-feature-engineering-and-baselines.md`)
 
@@ -122,8 +121,22 @@ v2 has started: **daily forecast pipeline**
 data refresh, dataset rebuild, retraining, and prediction into one command, verified
 end-to-end against the live RTE and Open-Meteo APIs (both connectors previously stopped
 fetching at "today" even though tomorrow's data is already published live — a real gap
-found and fixed as part of this work). Scheduling this to run automatically, a model
-registry (MLflow), a serving API and dashboard, and the Tempo extension are still ahead.
+found and fixed as part of this work).
+
+**Scheduling** (`docs/decisions/0008-airflow-daily-scheduling.md`): the pipeline now runs
+automatically once a day via a local Airflow instance (Docker, `LocalExecutor`, 3 separate
+tasks — `refresh` → `build_dataset` → `predict` — so a transient failure in one step
+doesn't force re-running the whole pipeline), scheduled at 16:00 Europe/Paris with 1 retry
+per task, `catchup=False`. Verified end-to-end for real: built the Docker image, brought up
+the full 5-service stack, triggered the DAG, and confirmed all 3 tasks reached `success`
+with a real `forecast_latest.parquet` written to the host filesystem. One real operational
+gotcha found during that verification: a manually-triggered run on a *paused* DAG (Airflow's
+default) is created but never executes — it sits in `queued` forever, since pause blocks
+task execution for manual triggers too, not just the scheduler's automatic firing. The
+README's setup instructions include the required `airflow dags unpause` step.
+
+A model registry (MLflow), a serving API and dashboard, and the Tempo extension are still
+ahead.
 
 **Known limitation**: the current 80% prediction interval is not well-calibrated (55.1%
 real coverage). Point-forecast numbers above are unaffected by this — it's specific to the
