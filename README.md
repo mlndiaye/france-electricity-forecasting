@@ -140,11 +140,32 @@ real). The DAG runs daily at 16:00 Europe/Paris with 3 tasks (`refresh`, `build_
 triggered run on a paused DAG is created but never executes (it sits in `queued`
 forever), so the `unpause` step above is required, not optional.
 
+## Serving API
+
+A read-only FastAPI service exposes the pipeline's results over HTTP — see
+[ADR 0010](docs/decisions/0010-serving-api.md) for why it's read-only (it never
+triggers a prediction itself; Airflow already does that daily) and where the
+historical comparison data actually comes from (joined at request time, not
+precomputed).
+
+```bash
+uv run fastapi dev src/felec/api/app.py
+```
+
+Interactive docs at http://localhost:8000/docs. Endpoints:
+- `GET /health`
+- `GET /forecast/latest` — tomorrow's forecast (404 if `ingest predict` hasn't run yet)
+- `GET /forecast/history?start=&end=` — model vs. RTE vs. actual over the backtest
+  window, optionally filtered by date (404 if `ingest quantile-backtest` hasn't run yet)
+
+Local only for now — deployment (a public link) is a deliberately separate,
+not-yet-made decision (see ADR 0010's Consequences).
+
 ## Tech stack
 
 Python 3.12 · `uv` · pandas · LightGBM · scikit-learn · pandera (data validation) ·
 pytest · ruff · Jupyter / matplotlib · Airflow (local scheduling) · MLflow (model
-tracking)
+tracking) · FastAPI (serving)
 
 ## Project status
 
@@ -162,9 +183,12 @@ automatically once a day via a local Airflow instance (see
 above). Every `ingest predict` run is also now logged to MLflow (hyperparameters,
 cutoff hour, training set size, and the trained models themselves) as a local,
 file-based audit trail (see
-[ADR 0009](docs/decisions/0009-mlflow-model-tracking.md)). Still ahead: a serving API
-and simple dashboard (FastAPI) comparing forecast vs. RTE vs. actual, and an extension
-estimating the probability of an RTE "Tempo" red day from the probabilistic forecast.
+[ADR 0009](docs/decisions/0009-mlflow-model-tracking.md)). A read-only serving API
+(see [ADR 0010](docs/decisions/0010-serving-api.md) and the Serving API section above)
+exposes these results over HTTP, locally for now. Still ahead: a simple dashboard
+consuming this API (forecast vs. RTE vs. actual), deploying the API publicly, and an
+extension estimating the probability of an RTE "Tempo" red day from the probabilistic
+forecast.
 
 ## Engineering standards
 
