@@ -135,8 +135,20 @@ default) is created but never executes — it sits in `queued` forever, since pa
 task execution for manual triggers too, not just the scheduler's automatic firing. The
 README's setup instructions include the required `airflow dags unpause` step.
 
-A model registry (MLflow), a serving API and dashboard, and the Tempo extension are still
-ahead.
+**Model tracking** (`docs/decisions/0009-mlflow-model-tracking.md`): every `ingest predict`
+run now logs to MLflow — hyperparameters, cutoff hour, training set size, and the three
+trained per-quantile LightGBM models — as a local, file-based audit trail (run-level
+tracking, not a full Model Registry; see the ADR for why). Verified end-to-end for real:
+ran `ingest predict` against live-refreshed data, confirmed real (non-null) params/metrics
+in the resulting run via `mlflow.search_runs`, confirmed all 3 model artifacts
+(`model_q10`/`model_q50`/`model_q90`) were actually persisted, and confirmed a second
+invocation creates an independent run rather than overwriting the first. One real
+implementation-time finding: MLflow 3.x puts its raw filesystem tracking backend
+(`file:./mlruns`) in maintenance mode and refuses to use it without an explicit opt-out —
+switched to a local SQLite file (`mlruns.db`) for tracking metadata instead (model
+artifacts still land in `mlruns/`); found by actually running the command, not assumed.
+
+A serving API and dashboard, and the Tempo extension are still ahead.
 
 **Known limitation**: the current 80% prediction interval is not well-calibrated (55.1%
 real coverage). Point-forecast numbers above are unaffected by this — it's specific to the
