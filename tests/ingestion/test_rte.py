@@ -231,3 +231,6 @@ def test_refresh_fetches_through_tomorrow(mock_datetime, mock_fetch, mock_save):
     refresh()
 
     mock_fetch.assert_called_once_with(TR_DATASET, date(2026, 9, 24), date(2026, 9, 30))
+    mock_save.assert_called_once_with(
+        mock_fetch.return_value, "rte/tr.parquet", key_cols=["date_heure"]
+    )
