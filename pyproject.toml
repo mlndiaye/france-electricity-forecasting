@@ -10,6 +10,7 @@ dependencies = [
     "lightgbm",
     "scikit-learn",
     "mlflow",
+    "fastapi[standard]",
 ]
 
 [project.optional-dependencies]
