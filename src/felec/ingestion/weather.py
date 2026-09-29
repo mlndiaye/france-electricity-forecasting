@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import requests
@@ -69,7 +70,9 @@ def refresh() -> None:
 
     Includes tomorrow because the Previous Runs API already has tomorrow's
     forecast available live (verified against the real API, ADR 0007) --
-    needed by the daily forecast pipeline to predict tomorrow.
+    needed by the daily forecast pipeline to predict tomorrow. "Today"/
+    "tomorrow" are Paris-local dates, not UTC, so the window's edges align
+    with the demand pattern's own local-time convention (see features.py).
     """
-    today = datetime.now(UTC).date()
+    today = datetime.now(UTC).astimezone(ZoneInfo("Europe/Paris")).date()
     backfill(today - timedelta(days=7), today + timedelta(days=1))

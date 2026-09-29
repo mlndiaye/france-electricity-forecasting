@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import requests
@@ -124,8 +125,10 @@ def refresh() -> None:
 
     Includes tomorrow because RTE already publishes prevision_j1 for tomorrow
     ahead of time (verified against the real API, ADR 0007) -- needed by the
-    daily forecast pipeline as its RTE benchmark.
+    daily forecast pipeline as its RTE benchmark. "Today"/"tomorrow" are
+    Paris-local dates, not UTC, so the window's edges align with the demand
+    pattern's own local-time convention (see features.py).
     """
-    today = datetime.now(UTC).date()
+    today = datetime.now(UTC).astimezone(ZoneInfo("Europe/Paris")).date()
     df = fetch_records(TR_DATASET, today - timedelta(days=5), today + timedelta(days=1))
     save_raw(df, "rte/tr.parquet", key_cols=["date_heure"])

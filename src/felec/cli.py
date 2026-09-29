@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from felec.ingestion import calendar as calendar_connector
 from felec.ingestion import rte as rte_connector
@@ -67,11 +68,19 @@ def quantile_backtest() -> None:
 
 
 def daily_forecast() -> None:
-    """Hits real RTE/Open-Meteo APIs on every call (via refresh()); no offline mode."""
+    """Hits real RTE/Open-Meteo APIs on every call (via refresh()); no offline mode.
+
+    target_date is computed from the Paris-local date, not the UTC date --
+    the demand pattern this project models only makes sense in local time
+    (see features.py), and near the UTC/Paris day boundary (roughly 22:00-
+    23:59 UTC in CEST, 23:00-23:59 UTC in CET), a UTC-based "tomorrow" would
+    silently resolve to Paris-local "today" instead.
+    """
     refresh()
     df = build_dataset()
     df = df.set_index("date_heure").sort_index()
-    target_date = datetime.now(UTC).date() + timedelta(days=1)
+    paris_today = datetime.now(UTC).astimezone(ZoneInfo("Europe/Paris")).date()
+    target_date = paris_today + timedelta(days=1)
     results = predict_next_day(df, target_date=target_date)
     save_processed(results, "forecast_latest.parquet")
     print(
