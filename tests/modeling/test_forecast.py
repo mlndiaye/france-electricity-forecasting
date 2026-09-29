@@ -102,6 +102,34 @@ def test_predict_next_day_sorts_crossed_quantile_predictions():
     assert (result["q50_pred"] <= result["q90_pred"]).all()
 
 
+def test_predict_next_day_passes_lgbm_params_through_to_the_model():
+    df = _synthetic_dataset(n_days=20)
+    target_date = date(2024, 2, 20)  # the dataset's last day
+    custom_params = {
+        "num_leaves": 7,
+        "learning_rate": 0.2,
+        "n_estimators": 5,
+        "min_child_samples": 3,
+    }
+
+    captured_params = []
+    original_fit = lgb.LGBMRegressor.fit
+
+    def fit_spy(self, X, y, *args, **kwargs):
+        captured_params.append(self.get_params())
+        return original_fit(self, X, y, *args, **kwargs)
+
+    with patch.object(lgb.LGBMRegressor, "fit", fit_spy):
+        predict_next_day(
+            df, target_date, cutoff_hour=12, quantiles=(0.1, 0.5, 0.9), lgbm_params=custom_params
+        )
+
+    assert len(captured_params) == 3  # one per quantile
+    for params in captured_params:
+        for key, value in custom_params.items():
+            assert params[key] == value
+
+
 def test_predict_next_day_raises_if_not_enough_history():
     df = _synthetic_dataset(n_days=20)
     target_date = date(2024, 2, 1)  # the dataset's very first day -- no prior history

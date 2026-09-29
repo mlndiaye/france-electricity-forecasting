@@ -7,6 +7,7 @@ from __future__ import annotations
 from datetime import date
 
 import lightgbm as lgb
+import numpy as np
 import pandas as pd
 
 from felec.modeling.backtest import DEFAULT_LGBM_PARAMS, sorted_quantile_columns
@@ -51,7 +52,7 @@ def predict_next_day(
         )
     day_features = features.loc[day_mask]
 
-    predictions: dict[float, object] = {}
+    predictions: dict[float, np.ndarray] = {}
     for q in sorted_quantiles:
         model = lgb.LGBMRegressor(
             objective="quantile", alpha=q, random_state=0, verbosity=-1, **params
