@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from felec.ingestion import calendar as calendar_connector
 from felec.ingestion import rte as rte_connector
@@ -14,6 +14,7 @@ from felec.ingestion.storage import load_processed, save_processed
 # (importing it under its own name would make that function call itself).
 from felec.modeling.backtest import quantile_backtest as run_quantile_backtest
 from felec.modeling.backtest import walk_forward_backtest
+from felec.modeling.forecast import predict_next_day
 from felec.processing.build_dataset import build_dataset
 
 # First date confirmed to have real AROME France D-1 forecast data via the
@@ -65,6 +66,19 @@ def quantile_backtest() -> None:
     )
 
 
+def daily_forecast() -> None:
+    refresh()
+    df = build_dataset()
+    df = df.set_index("date_heure").sort_index()
+    target_date = datetime.now(UTC).date() + timedelta(days=1)
+    results = predict_next_day(df, target_date=target_date)
+    save_processed(results, "forecast_latest.parquet")
+    print(
+        f"Daily forecast for {target_date}: {len(results)} hourly rows, "
+        f"saved to data/processed/forecast_latest.parquet"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="ingest")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -73,6 +87,7 @@ def main() -> None:
     subparsers.add_parser("build-dataset")
     subparsers.add_parser("backtest")
     subparsers.add_parser("quantile-backtest")
+    subparsers.add_parser("daily-forecast")
 
     args = parser.parse_args()
 
@@ -86,6 +101,8 @@ def main() -> None:
         backtest()
     elif args.command == "quantile-backtest":
         quantile_backtest()
+    elif args.command == "daily-forecast":
+        daily_forecast()
 
 
 if __name__ == "__main__":

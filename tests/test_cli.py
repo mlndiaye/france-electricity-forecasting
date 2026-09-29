@@ -36,3 +36,10 @@ def test_main_dispatches_to_quantile_backtest(mock_quantile_backtest, monkeypatc
     monkeypatch.setattr("sys.argv", ["ingest", "quantile-backtest"])
     main()
     mock_quantile_backtest.assert_called_once()
+
+
+@patch("felec.cli.daily_forecast")
+def test_main_dispatches_to_daily_forecast(mock_daily_forecast, monkeypatch):
+    monkeypatch.setattr("sys.argv", ["ingest", "daily-forecast"])
+    main()
+    mock_daily_forecast.assert_called_once()
