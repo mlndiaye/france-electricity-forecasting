@@ -143,7 +143,8 @@ forever), so the `unpause` step above is required, not optional.
 ## Tech stack
 
 Python 3.12 · `uv` · pandas · LightGBM · scikit-learn · pandera (data validation) ·
-pytest · ruff · Jupyter / matplotlib · Airflow (local scheduling)
+pytest · ruff · Jupyter / matplotlib · Airflow (local scheduling) · MLflow (model
+tracking)
 
 ## Project status
 
@@ -158,8 +159,11 @@ live RTE and Open-Meteo APIs (see
 [ADR 0007](docs/decisions/0007-daily-forecast-pipeline.md)). This pipeline now also runs
 automatically once a day via a local Airflow instance (see
 [ADR 0008](docs/decisions/0008-airflow-daily-scheduling.md) and the Scheduling section
-above). Still ahead: a model registry and drift monitoring (MLflow), a serving API and
-simple dashboard (FastAPI) comparing forecast vs. RTE vs. actual, and an extension
+above). Every `ingest predict` run is also now logged to MLflow (hyperparameters,
+cutoff hour, training set size, and the trained models themselves) as a local,
+file-based audit trail (see
+[ADR 0009](docs/decisions/0009-mlflow-model-tracking.md)). Still ahead: a serving API
+and simple dashboard (FastAPI) comparing forecast vs. RTE vs. actual, and an extension
 estimating the probability of an RTE "Tempo" red day from the probabilistic forecast.
 
 ## Engineering standards
