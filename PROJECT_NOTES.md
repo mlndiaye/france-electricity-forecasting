@@ -117,6 +117,14 @@ quantile) forecast are all built, tested, and verified against real data end-to-
   honestly-reported limitation, not swept under the rug: the natural next step is
   conformal prediction (rejected earlier for complexity, now motivated by this result).
 
+v2 has started: **daily forecast pipeline**
+(`docs/decisions/0007-daily-forecast-pipeline.md`) — `ingest daily-forecast` chains a real
+data refresh, dataset rebuild, retraining, and prediction into one command, verified
+end-to-end against the live RTE and Open-Meteo APIs (both connectors previously stopped
+fetching at "today" even though tomorrow's data is already published live — a real gap
+found and fixed as part of this work). Scheduling this to run automatically, a model
+registry (MLflow), a serving API and dashboard, and the Tempo extension are still ahead.
+
 **Known limitation**: the current 80% prediction interval is not well-calibrated (55.1%
 real coverage). Point-forecast numbers above are unaffected by this — it's specific to the
 interval, not the median prediction.

@@ -101,10 +101,14 @@ uv run ingest quantile-backtest
 
 # Day-to-day incremental refresh (for a running system)
 uv run ingest refresh
+
+# Produce tomorrow's real forecast: refresh + rebuild + retrain + predict,
+# in one command. Hits the live RTE and Open-Meteo APIs (~20s).
+uv run ingest daily-forecast
 ```
 
 ```bash
-uv run pytest        # 59 tests
+uv run pytest        # 69 tests
 uv run ruff check .  # lint
 uv run ruff format .
 ```
@@ -121,10 +125,14 @@ naive + RTE baselines, LightGBM point forecast, daily walk-forward backtest over
 year, error analysis by day type, and a first probabilistic forecast (multi-quantile
 LightGBM) — all built, tested, and verified against real data end-to-end.
 
-**v2 (planned, not started)**: daily automated run, a model registry and drift monitoring
-(MLflow), a serving API and simple dashboard (FastAPI) comparing forecast vs. RTE vs.
-actual, and an extension estimating the probability of an RTE "Tempo" red day from the
-probabilistic forecast.
+**v2 (in progress)**: a first slice is shipped — `ingest daily-forecast` chains real data
+refresh, dataset rebuild, model retraining, and prediction into a single command,
+verified end-to-end against the live RTE and Open-Meteo APIs (see
+[ADR 0007](docs/decisions/0007-daily-forecast-pipeline.md)). Still ahead: scheduling this
+to actually run automatically (Airflow vs. a lighter alternative — an open decision, not
+yet made), a model registry and drift monitoring (MLflow), a serving API and simple
+dashboard (FastAPI) comparing forecast vs. RTE vs. actual, and an extension estimating the
+probability of an RTE "Tempo" red day from the probabilistic forecast.
 
 ## Engineering standards
 
