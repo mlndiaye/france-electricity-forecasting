@@ -1,9 +1,9 @@
 from datetime import UTC, date, datetime
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pandas as pd
 
-from felec.cli import daily_forecast, main
+from felec.cli import daily_forecast, main, predict
 
 
 @patch("felec.cli.backfill")
@@ -48,13 +48,19 @@ def test_main_dispatches_to_daily_forecast(mock_daily_forecast, monkeypatch):
     mock_daily_forecast.assert_called_once()
 
 
+@patch("felec.cli.predict")
+def test_main_dispatches_to_predict(mock_predict, monkeypatch):
+    monkeypatch.setattr("sys.argv", ["ingest", "predict"])
+    main()
+    mock_predict.assert_called_once()
+
+
 @patch("felec.cli.save_processed")
 @patch("felec.cli.predict_next_day")
-@patch("felec.cli.build_dataset")
-@patch("felec.cli.refresh")
+@patch("felec.cli.load_processed")
 @patch("felec.cli.datetime")
-def test_daily_forecast_computes_target_date_from_paris_local_time(
-    mock_datetime, mock_refresh, mock_build_dataset, mock_predict, mock_save
+def test_predict_computes_target_date_from_paris_local_time(
+    mock_datetime, mock_load_processed, mock_predict, mock_save
 ):
     """Regression test: near the UTC/Paris day boundary (23:00 UTC = 01:00
     Paris local the next day, during CEST), target_date must be computed from
@@ -62,11 +68,27 @@ def test_daily_forecast_computes_target_date_from_paris_local_time(
     silently resolve to Paris-local "today" instead.
     """
     mock_datetime.now.return_value = datetime(2026, 9, 29, 23, 0, tzinfo=UTC)
-    mock_build_dataset.return_value = pd.DataFrame({"date_heure": [], "consommation": []})
+    mock_load_processed.return_value = pd.DataFrame({"date_heure": [], "consommation": []})
     mock_predict.return_value = pd.DataFrame({"date_heure": []})
 
-    daily_forecast()
+    predict()
 
     mock_predict.assert_called_once()
     _, kwargs = mock_predict.call_args
     assert kwargs["target_date"] == date(2026, 10, 1)
+
+
+@patch("felec.cli.predict")
+@patch("felec.cli.build_dataset")
+@patch("felec.cli.refresh")
+def test_daily_forecast_calls_refresh_build_dataset_and_predict_in_order(
+    mock_refresh, mock_build_dataset, mock_predict
+):
+    manager = Mock()
+    manager.attach_mock(mock_refresh, "refresh")
+    manager.attach_mock(mock_build_dataset, "build_dataset")
+    manager.attach_mock(mock_predict, "predict")
+
+    daily_forecast()
+
+    assert [call[0] for call in manager.mock_calls] == ["refresh", "build_dataset", "predict"]

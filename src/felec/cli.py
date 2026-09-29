@@ -67,8 +67,11 @@ def quantile_backtest() -> None:
     )
 
 
-def daily_forecast() -> None:
-    """Hits real RTE/Open-Meteo APIs on every call (via refresh()); no offline mode.
+def predict() -> None:
+    """No external API calls -- assumes refresh()/build_dataset() already ran
+    and data/processed/dataset.parquet is current. Separated from
+    daily_forecast() so Airflow can retry a failed prediction without
+    re-fetching data or rebuilding the dataset -- see ADR 0008.
 
     target_date is computed from the Paris-local date, not the UTC date --
     the demand pattern this project models only makes sense in local time
@@ -76,8 +79,7 @@ def daily_forecast() -> None:
     23:59 UTC in CEST, 23:00-23:59 UTC in CET), a UTC-based "tomorrow" would
     silently resolve to Paris-local "today" instead.
     """
-    refresh()
-    df = build_dataset()
+    df = load_processed("dataset.parquet")
     df = df.set_index("date_heure").sort_index()
     paris_today = datetime.now(UTC).astimezone(ZoneInfo("Europe/Paris")).date()
     target_date = paris_today + timedelta(days=1)
@@ -89,6 +91,17 @@ def daily_forecast() -> None:
     )
 
 
+def daily_forecast() -> None:
+    """Hits real RTE/Open-Meteo APIs on every call (via refresh()); no offline
+    mode. A convenience wrapper for a quick manual run -- Airflow calls
+    refresh(), build_dataset(), and predict() as three separate tasks
+    instead, see ADR 0008.
+    """
+    refresh()
+    build_dataset()
+    predict()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="ingest")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -98,6 +111,7 @@ def main() -> None:
     subparsers.add_parser("backtest")
     subparsers.add_parser("quantile-backtest")
     subparsers.add_parser("daily-forecast")
+    subparsers.add_parser("predict")
 
     args = parser.parse_args()
 
@@ -113,6 +127,8 @@ def main() -> None:
         quantile_backtest()
     elif args.command == "daily-forecast":
         daily_forecast()
+    elif args.command == "predict":
+        predict()
 
 
 if __name__ == "__main__":
