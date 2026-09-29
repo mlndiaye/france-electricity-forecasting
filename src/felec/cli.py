@@ -85,14 +85,19 @@ def predict() -> None:
 
     Every run is logged to MLflow (hyperparameters, cutoff hour, training set
     size, and the trained models themselves) so a specific forecast can later
-    be traced back to the model that produced it -- see ADR 0009.
+    be traced back to the model that produced it -- see ADR 0009. Tracking
+    metadata goes to a local SQLite file (mlruns.db), not the raw filesystem
+    store: MLflow 3.x puts the filesystem backend in maintenance mode and
+    refuses to use it without an explicit opt-out, found by actually running
+    this command, not assumed. Model artifacts themselves still land in a
+    local mlruns/ directory either way.
     """
     df = load_processed("dataset.parquet")
     df = df.set_index("date_heure").sort_index()
     paris_today = datetime.now(UTC).astimezone(ZoneInfo("Europe/Paris")).date()
     target_date = paris_today + timedelta(days=1)
 
-    mlflow.set_tracking_uri(f"file:{Path('mlruns').resolve()}")
+    mlflow.set_tracking_uri(f"sqlite:///{Path('mlruns.db').resolve()}")
     mlflow.set_experiment("daily_forecast")
     with mlflow.start_run():
         result = predict_next_day(df, target_date=target_date)

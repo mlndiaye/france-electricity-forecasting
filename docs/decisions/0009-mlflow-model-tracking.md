@@ -22,13 +22,23 @@ the Registry's naming/versioning/staging machinery would be unused complexity. R
 if a future serving API needs to load one specific "production" model rather than
 always retraining (see PROJECT_NOTES.md's still-ahead FastAPI/dashboard slice).
 
-### Local file-based tracking, not a dockerized MLflow server
+### Local tracking, not a dockerized MLflow server
 
 Consistent with ADR 0008's "run locally" decision: a single writer (the daily
 `predict` task) and a single reader (this developer, via `mlflow ui` on demand) don't
-need an always-on tracking server with its own backend store and artifact store.
-`mlflow.set_tracking_uri("file:...")` pointing at a local `mlruns/` directory gives
-the same audit trail without a fifth Docker service to maintain.
+need an always-on tracking server with its own backend store and artifact store. A
+local `mlflow.set_tracking_uri(...)` gives the same audit trail without a fifth
+Docker service to maintain.
+
+Tracking metadata goes to a local SQLite file (`mlruns.db`), not MLflow's raw
+filesystem store (`file:./mlruns`) as originally planned — found by actually running
+`ingest predict`, not assumed: MLflow 3.x puts the filesystem tracking backend in
+maintenance mode and raises rather than use it, unless `MLFLOW_ALLOW_FILE_STORE=true`
+is set. SQLite is the currently-supported path, is still a single local file with no
+server process, and keeps the design's actual intent (local, no server) intact — only
+the exact backend mechanism changed. Model artifacts (the trained LightGBM models
+themselves) still land in a local `mlruns/` directory either way; only the tracking
+*metadata* (params, metrics, run records) moved to SQLite.
 
 ### Logged from `cli.py`, not from `forecast.py`
 
@@ -76,7 +86,8 @@ runs over time), deferred until there's a concrete reason to do it.
   runtime — including inside the Airflow container, where it installs via the same
   `uv run` mechanism as every other dependency (see ADR 0008's `uv`-inside-Docker
   note).
-- `mlruns/` lives only on the machine that runs `ingest predict` — in practice, on the
+- `mlruns/` (model artifacts) and `mlruns.db` (tracking metadata, SQLite) both live
+  only on the machine that runs `ingest predict` — in practice, on the
   host filesystem under this project's Airflow volume mount. There is no shared or
   centralized tracking server; if this machine's disk is lost, the tracking history is
   lost with it. This is the same class of limitation already documented for local

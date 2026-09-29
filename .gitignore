@@ -11,3 +11,4 @@ airflow/logs/
 airflow/plugins/
 airflow/config/
 mlruns/
+mlruns.db
