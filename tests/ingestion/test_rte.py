@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import Mock, patch
 
 import pandas as pd
@@ -10,6 +10,7 @@ from felec.ingestion.rte import (
     TR_DATASET,
     backfill,
     fetch_records,
+    refresh,
 )
 
 ONE_RECORD = {
@@ -213,3 +214,20 @@ def test_backfill_queries_tr_only_when_fully_after_boundary(mock_fetch, mock_sav
     backfill(start, end)
 
     mock_fetch.assert_called_once_with(TR_DATASET, start, end)
+
+
+@patch("felec.ingestion.rte.save_raw")
+@patch("felec.ingestion.rte.fetch_records")
+@patch("felec.ingestion.rte.datetime")
+def test_refresh_fetches_through_tomorrow(mock_datetime, mock_fetch, mock_save):
+    """RTE already publishes prevision_j1 for tomorrow ahead of time (verified
+    against the real API while designing ADR 0007) -- refresh must include
+    it, not stop at today, or the daily forecast pipeline would have no RTE
+    benchmark for the day it's trying to predict.
+    """
+    mock_datetime.now.return_value = datetime(2026, 9, 29, tzinfo=UTC)
+    mock_fetch.return_value = pd.DataFrame()
+
+    refresh()
+
+    mock_fetch.assert_called_once_with(TR_DATASET, date(2026, 9, 24), date(2026, 9, 30))

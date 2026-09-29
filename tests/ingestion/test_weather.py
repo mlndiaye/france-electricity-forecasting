@@ -1,7 +1,7 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from unittest.mock import Mock, patch
 
-from felec.ingestion.weather import CITIES, backfill, fetch_previous_day_forecast
+from felec.ingestion.weather import CITIES, backfill, fetch_previous_day_forecast, refresh
 
 FAKE_RESPONSE = {
     "hourly": {
@@ -44,3 +44,18 @@ def test_backfill_fetches_and_saves_every_city(mock_fetch, mock_save):
 
     assert mock_fetch.call_count == len(CITIES)
     assert mock_save.call_count == len(CITIES)
+
+
+@patch("felec.ingestion.weather.backfill")
+@patch("felec.ingestion.weather.datetime")
+def test_refresh_fetches_through_tomorrow(mock_datetime, mock_backfill):
+    """Tomorrow's forecast is already available live from the Previous Runs
+    API (verified against the real API while designing ADR 0007) -- refresh
+    must include it, not stop at today, or the daily forecast pipeline would
+    have no weather feature for the day it's trying to predict.
+    """
+    mock_datetime.now.return_value = datetime(2026, 9, 29, tzinfo=UTC)
+
+    refresh()
+
+    mock_backfill.assert_called_once_with(date(2026, 9, 22), date(2026, 9, 30))

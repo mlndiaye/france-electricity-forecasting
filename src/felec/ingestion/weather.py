@@ -1,4 +1,5 @@
 """Weather forecast connector (Open-Meteo Previous Runs API)."""
+
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
@@ -64,6 +65,11 @@ def backfill(start_date: date, end_date: date) -> None:
 
 
 def refresh() -> None:
-    """Re-fetch the last 7 days through today for every city."""
+    """Re-fetch the last 7 days through tomorrow for every city.
+
+    Includes tomorrow because the Previous Runs API already has tomorrow's
+    forecast available live (verified against the real API, ADR 0007) --
+    needed by the daily forecast pipeline to predict tomorrow.
+    """
     today = datetime.now(UTC).date()
-    backfill(today - timedelta(days=7), today)
+    backfill(today - timedelta(days=7), today + timedelta(days=1))

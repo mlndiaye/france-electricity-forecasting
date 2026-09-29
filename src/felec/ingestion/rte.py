@@ -1,4 +1,5 @@
 """RTE éCO2mix connector (via the ODRÉ Explore v2.1 API)."""
+
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
@@ -8,9 +9,7 @@ import requests
 
 from felec.ingestion.storage import save_raw
 
-RECORDS_URL = (
-    "https://odre.opendatasoft.com/api/explore/v2.1/catalog/datasets/{dataset}/records"
-)
+RECORDS_URL = "https://odre.opendatasoft.com/api/explore/v2.1/catalog/datasets/{dataset}/records"
 FIELDS = ["date", "heure", "date_heure", "consommation", "prevision_j1", "prevision_j"]
 PAGE_SIZE = 100
 
@@ -121,7 +120,12 @@ def backfill(start_date: date, end_date: date) -> None:
 
 
 def refresh() -> None:
-    """Re-fetch the last 5 days through today from the tr dataset."""
+    """Re-fetch the last 5 days through tomorrow from the tr dataset.
+
+    Includes tomorrow because RTE already publishes prevision_j1 for tomorrow
+    ahead of time (verified against the real API, ADR 0007) -- needed by the
+    daily forecast pipeline as its RTE benchmark.
+    """
     today = datetime.now(UTC).date()
-    df = fetch_records(TR_DATASET, today - timedelta(days=5), today)
+    df = fetch_records(TR_DATASET, today - timedelta(days=5), today + timedelta(days=1))
     save_raw(df, "rte/tr.parquet", key_cols=["date_heure"])
