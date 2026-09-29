@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import argparse
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
+
+import mlflow
+import mlflow.lightgbm
 
 from felec.ingestion import calendar as calendar_connector
 from felec.ingestion import rte as rte_connector
@@ -78,15 +82,32 @@ def predict() -> None:
     (see features.py), and near the UTC/Paris day boundary (roughly 22:00-
     23:59 UTC in CEST, 23:00-23:59 UTC in CET), a UTC-based "tomorrow" would
     silently resolve to Paris-local "today" instead.
+
+    Every run is logged to MLflow (hyperparameters, cutoff hour, training set
+    size, and the trained models themselves) so a specific forecast can later
+    be traced back to the model that produced it -- see ADR 0009.
     """
     df = load_processed("dataset.parquet")
     df = df.set_index("date_heure").sort_index()
     paris_today = datetime.now(UTC).astimezone(ZoneInfo("Europe/Paris")).date()
     target_date = paris_today + timedelta(days=1)
-    results = predict_next_day(df, target_date=target_date)
-    save_processed(results, "forecast_latest.parquet")
+
+    mlflow.set_tracking_uri(f"file:{Path('mlruns').resolve()}")
+    mlflow.set_experiment("daily_forecast")
+    with mlflow.start_run():
+        result = predict_next_day(df, target_date=target_date)
+        mlflow.log_param("target_date", str(target_date))
+        mlflow.log_param("cutoff_hour", result.cutoff_hour)
+        mlflow.log_param("quantiles", list(result.models.keys()))
+        for key, value in result.params.items():
+            mlflow.log_param(key, value)
+        mlflow.log_metric("n_train_rows", result.n_train_rows)
+        for q, model in result.models.items():
+            mlflow.lightgbm.log_model(model, name=f"model_q{round(q * 100)}")
+
+    save_processed(result.predictions, "forecast_latest.parquet")
     print(
-        f"Daily forecast for {target_date}: {len(results)} hourly rows, "
+        f"Daily forecast for {target_date}: {len(result.predictions)} hourly rows, "
         f"saved to data/processed/forecast_latest.parquet"
     )
 

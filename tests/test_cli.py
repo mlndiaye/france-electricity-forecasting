@@ -4,6 +4,7 @@ from unittest.mock import Mock, patch
 import pandas as pd
 
 from felec.cli import daily_forecast, main, predict
+from felec.modeling.forecast import ForecastResult
 
 
 @patch("felec.cli.backfill")
@@ -55,12 +56,25 @@ def test_main_dispatches_to_predict(mock_predict, monkeypatch):
     mock_predict.assert_called_once()
 
 
+def _fake_forecast_result(**overrides) -> ForecastResult:
+    defaults = {
+        "predictions": pd.DataFrame({"date_heure": []}),
+        "models": {},
+        "params": {},
+        "cutoff_hour": 12,
+        "n_train_rows": 0,
+    }
+    defaults.update(overrides)
+    return ForecastResult(**defaults)
+
+
+@patch("felec.cli.mlflow")
 @patch("felec.cli.save_processed")
 @patch("felec.cli.predict_next_day")
 @patch("felec.cli.load_processed")
 @patch("felec.cli.datetime")
 def test_predict_computes_target_date_from_paris_local_time(
-    mock_datetime, mock_load_processed, mock_predict, mock_save
+    mock_datetime, mock_load_processed, mock_predict, mock_save, mock_mlflow
 ):
     """Regression test: near the UTC/Paris day boundary (23:00 UTC = 01:00
     Paris local the next day, during CEST), target_date must be computed from
@@ -69,13 +83,37 @@ def test_predict_computes_target_date_from_paris_local_time(
     """
     mock_datetime.now.return_value = datetime(2026, 9, 29, 23, 0, tzinfo=UTC)
     mock_load_processed.return_value = pd.DataFrame({"date_heure": [], "consommation": []})
-    mock_predict.return_value = pd.DataFrame({"date_heure": []})
+    mock_predict.return_value = _fake_forecast_result()
 
     predict()
 
     mock_predict.assert_called_once()
     _, kwargs = mock_predict.call_args
     assert kwargs["target_date"] == date(2026, 10, 1)
+
+
+@patch("felec.cli.mlflow")
+@patch("felec.cli.save_processed")
+@patch("felec.cli.predict_next_day")
+@patch("felec.cli.load_processed")
+@patch("felec.cli.datetime")
+def test_predict_logs_params_metrics_and_models_to_mlflow(
+    mock_datetime, mock_load_processed, mock_predict, mock_save, mock_mlflow
+):
+    mock_datetime.now.return_value = datetime(2026, 9, 29, 12, 0, tzinfo=UTC)
+    mock_load_processed.return_value = pd.DataFrame({"date_heure": [], "consommation": []})
+    mock_predict.return_value = _fake_forecast_result(
+        models={0.1: Mock(), 0.5: Mock(), 0.9: Mock()},
+        params={"num_leaves": 63, "learning_rate": 0.05},
+        cutoff_hour=12,
+        n_train_rows=1234,
+    )
+
+    predict()
+
+    mock_mlflow.start_run.assert_called_once()
+    mock_mlflow.log_metric.assert_called_once_with("n_train_rows", 1234)
+    assert mock_mlflow.lightgbm.log_model.call_count == 3
 
 
 @patch("felec.cli.predict")
