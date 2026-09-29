@@ -54,7 +54,7 @@ lgbm_params=None) -> pd.DataFrame`:
 - Sorts each row's predictions across quantile levels before assigning them to columns,
   reusing the exact fix already built and tested for `quantile_backtest`'s "quantile
   crossing" bug (ADR 0006) — extracted into a small shared helper,
-  `_sorted_quantile_columns`, in `backtest.py`, imported by `forecast.py`, so the fix
+  `sorted_quantile_columns`, in `backtest.py`, imported by `forecast.py`, so the fix
   lives in one place rather than being copied.
 - Returns `date_heure`, `q10_pred`, `q50_pred`, `q90_pred`, `naive_pred` (via the existing
   `seasonal_naive`), `rte_pred` (from the dataset's own `prevision_j1`, already available
@@ -110,7 +110,7 @@ new module, partial-failure handling, model-only output). Also:
 - This command hits real external APIs (RTE, Open-Meteo) every time it runs. Running it
   manually is fine; running it unattended on a schedule is a separate decision requiring
   its own explicit setup, not something this ADR turns on by itself.
-- `forecast.py` and `backtest.py` now both depend on `_sorted_quantile_columns` — a
+- `forecast.py` and `backtest.py` now both depend on `sorted_quantile_columns` — a
   change to that helper (e.g., a different crossing-resolution strategy) affects both
   real backtesting and real daily forecasts identically, which is the intended behavior,
   not a coincidence to be careful about.
