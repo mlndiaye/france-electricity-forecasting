@@ -148,7 +148,24 @@ implementation-time finding: MLflow 3.x puts its raw filesystem tracking backend
 switched to a local SQLite file (`mlruns.db`) for tracking metadata instead (model
 artifacts still land in `mlruns/`); found by actually running the command, not assumed.
 
-A serving API and dashboard, and the Tempo extension are still ahead.
+**Serving API** (`docs/decisions/0010-serving-api.md`): a read-only FastAPI service
+(`src/felec/api/app.py`) exposes `GET /health`, `GET /forecast/latest`, and
+`GET /forecast/history?start=&end=`. It never triggers a prediction itself — Airflow
+already computes everything daily; the API only serves already-written Parquet
+results via the existing `load_processed()` helper. `quantile_backtest_results.parquet`
+turned out to only hold `date_heure`/`q10_pred`/`q90_pred` (no actual consumption, no
+RTE forecast — confirmed by reading `quantile_backtest()`'s own code and tests before
+designing this), so `/forecast/history` joins it with `dataset.parquet` at request
+time rather than requiring a new precomputed file. Verified end-to-end for real:
+started the server, hit all 3 endpoints against live-refreshed data and a real (30-day)
+quantile backtest, confirmed the join and date filtering both work against real
+numbers, confirmed 404s when a file is genuinely missing. Deployment (a public link)
+was raised as a near-term goal during brainstorming but deliberately deferred to its
+own future decision — the same class of "local produces the data, a public instance
+would need to reach it" problem ADR 0008 already named for scheduling.
+
+A dashboard consuming this API, deploying it publicly, and the Tempo extension are
+still ahead.
 
 **Known limitation**: the current 80% prediction interval is not well-calibrated (55.1%
 real coverage). Point-forecast numbers above are unaffected by this — it's specific to the
