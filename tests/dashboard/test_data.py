@@ -53,7 +53,7 @@ def test_fetch_latest_forecast_raises_when_not_ready(mock_get):
 
 @patch("felec.dashboard.data.requests.get")
 def test_fetch_history_passes_start_and_end_as_query_params(mock_get):
-    mock_get.return_value = Mock(status_code=200, json=lambda: [], raise_for_status=lambda: None)
+    mock_get.return_value = Mock(status_code=200, json=list, raise_for_status=lambda: None)
 
     fetch_history("http://localhost:8000", date(2026, 1, 1), date(2026, 1, 31))
 
@@ -66,7 +66,7 @@ def test_fetch_history_passes_start_and_end_as_query_params(mock_get):
 
 @patch("felec.dashboard.data.requests.get")
 def test_fetch_history_omits_params_when_not_given(mock_get):
-    mock_get.return_value = Mock(status_code=200, json=lambda: [], raise_for_status=lambda: None)
+    mock_get.return_value = Mock(status_code=200, json=list, raise_for_status=lambda: None)
 
     fetch_history("http://localhost:8000", None, None)
 
