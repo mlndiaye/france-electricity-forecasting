@@ -11,6 +11,8 @@ dependencies = [
     "scikit-learn",
     "mlflow",
     "fastapi[standard]",
+    "streamlit",
+    "plotly",
 ]
 
 [project.optional-dependencies]
