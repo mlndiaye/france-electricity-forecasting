@@ -57,6 +57,9 @@ ingest → assemble dataset → engineer features → backtest → evaluate
   information unavailable at the D-1 forecast cutoff), a seasonal-naive baseline, and a
   daily walk-forward backtest that retrains a fresh LightGBM model every day, exactly
   mirroring how the system would actually run in production.
+- **Serving** (`src/felec/api/`, `src/felec/dashboard/`): a read-only FastAPI layer and a
+  Streamlit dashboard, both consuming already-computed pipeline results — see
+  [Running it end-to-end](#running-it-end-to-end) below.
 - **Notebooks** (`notebooks/`): exploration, model selection (hyperparameter tuning),
   error analysis by day type, probabilistic evaluation — each a self-contained, executed
   record of a real analysis, not illustrative code.
@@ -108,19 +111,29 @@ uv run ingest daily-forecast
 ```
 
 ```bash
-uv run pytest        # 69 tests
+uv run pytest        # 90 tests
 uv run ruff check .  # lint
 uv run ruff format .
 ```
 
-## Scheduling (Airflow, local)
+## Running it end-to-end
 
-The daily forecast pipeline (`refresh` → `build-dataset` → `predict`) can run
-automatically once a day via a local Airflow instance — see
-[ADR 0008](docs/decisions/0008-airflow-daily-scheduling.md) for why Airflow (not a
-lighter local scheduler) and why local (not cloud) for now, including the honest
-limitation this implies: if this machine is asleep or off at 16:00 Paris time, that
-day's forecast is simply not produced.
+Four pieces, each with its own ADR for the reasoning behind it — this section is just
+the commands to run them locally.
+
+```
+Airflow (daily, 16:00 Europe/Paris)
+  refresh → build-dataset → predict  ──────►  MLflow (run tracking)
+                                                      │
+                                                      ▼
+                                      data/processed/*.parquet
+                                                      │
+                                                      ▼
+                                  FastAPI  ──serves──►  Streamlit dashboard
+                              (localhost:8000)          (localhost:8501)
+```
+
+### Scheduling ([ADR 0008](docs/decisions/0008-airflow-daily-scheduling.md))
 
 ```bash
 cd airflow
@@ -133,50 +146,50 @@ docker compose up -d
 docker compose exec airflow-scheduler airflow dags unpause daily_forecast
 ```
 
-The Airflow UI is then at http://localhost:8080 (default login: `airflow` / `airflow` —
-this is a local-only, non-production setup; do not reuse these credentials anywhere
-real). The DAG runs daily at 16:00 Europe/Paris with 3 tasks (`refresh`, `build_dataset`,
-`predict`) and 1 retry per task. Note: a DAG stays paused by default — a manually
-triggered run on a paused DAG is created but never executes (it sits in `queued`
-forever), so the `unpause` step above is required, not optional.
+Airflow UI at http://localhost:8080 (`airflow` / `airflow`, local-only credentials — do
+not reuse anywhere real). Runs daily at 16:00 Paris time, 3 tasks, 1 retry each. A DAG
+stays paused by default and a manually-triggered run on a paused DAG never executes — the
+`unpause` step above is required. Known limitation: if this machine is asleep or off at
+16:00, that day's forecast simply isn't produced (local scheduling, not yet cloud-hosted).
 
-## Serving API
+### Model tracking ([ADR 0009](docs/decisions/0009-mlflow-model-tracking.md))
 
-A read-only FastAPI service exposes the pipeline's results over HTTP — see
-[ADR 0010](docs/decisions/0010-serving-api.md) for why it's read-only (it never
-triggers a prediction itself; Airflow already does that daily) and where the
-historical comparison data actually comes from (joined at request time, not
-precomputed).
+Automatic — every `ingest predict` run logs its hyperparameters, cutoff hour, training
+set size, and the three trained models to a local `mlruns.db`/`mlruns/`. Inspect with:
+
+```bash
+uv run mlflow ui --backend-store-uri sqlite:///mlruns.db
+```
+
+### Serving API ([ADR 0010](docs/decisions/0010-serving-api.md))
 
 ```bash
 uv run fastapi dev src/felec/api/app.py
 ```
 
-Interactive docs at http://localhost:8000/docs. Endpoints:
+Interactive docs at http://localhost:8000/docs. Read-only — it never triggers a
+prediction itself, only serves what Airflow already computed:
 - `GET /health`
 - `GET /forecast/latest` — tomorrow's forecast (404 if `ingest predict` hasn't run yet)
 - `GET /forecast/history?start=&end=` — model vs. RTE vs. actual over the backtest
-  window, optionally filtered by date (404 if `ingest quantile-backtest` hasn't run yet)
+  window (404 if `ingest quantile-backtest` hasn't run yet)
 
-Local only for now — deployment (a public link) is a deliberately separate,
-not-yet-made decision (see ADR 0010's Consequences).
+### Dashboard ([ADR 0011](docs/decisions/0011-dashboard.md))
 
-## Dashboard
-
-A Streamlit dashboard visualizes the serving API's results — see
-[ADR 0011](docs/decisions/0011-dashboard.md) for why Streamlit, and why it shows
-interval coverage and RTE's MAE but not a "model MAE" (the underlying data has no
-median forecast to compute one honestly from).
-
-Requires the serving API running separately (see the Serving API section above):
+Requires the serving API running separately (previous step):
 
 ```bash
 uv run streamlit run src/felec/dashboard/app.py
 ```
 
-Opens at http://localhost:8501. Shows tomorrow's forecast (with its 80% interval) and
-a historical model-vs-RTE-vs-actual comparison over a selectable date range, with
-live-computed coverage and RTE MAE metrics.
+Opens at http://localhost:8501. Tomorrow's forecast plus a historical
+model-vs-RTE-vs-actual comparison, with live-computed interval coverage and RTE MAE —
+deliberately no "model MAE" (the underlying data has no median forecast to compute one
+honestly from).
+
+All four pieces are local-only for now — deploying the API and dashboard publicly is a
+real, near-term goal, but a deliberately separate, not-yet-made decision (same reasoning
+as ADR 0008's "local, not cloud" call for scheduling).
 
 ## Tech stack
 
@@ -186,28 +199,25 @@ tracking) · FastAPI (serving) · Streamlit + Plotly (dashboard)
 
 ## Project status
 
-**v1 (shipped)**: ingestion pipeline, exploratory analysis, feature engineering, seasonal
+**v1 — shipped**: ingestion pipeline, exploratory analysis, feature engineering, seasonal
 naive + RTE baselines, LightGBM point forecast, daily walk-forward backtest over a full
 year, error analysis by day type, and a first probabilistic forecast (multi-quantile
 LightGBM) — all built, tested, and verified against real data end-to-end.
 
-**v2 (in progress)**: `ingest daily-forecast` chains real data refresh, dataset rebuild,
-model retraining, and prediction into a single command, verified end-to-end against the
-live RTE and Open-Meteo APIs (see
-[ADR 0007](docs/decisions/0007-daily-forecast-pipeline.md)). This pipeline now also runs
-automatically once a day via a local Airflow instance (see
-[ADR 0008](docs/decisions/0008-airflow-daily-scheduling.md) and the Scheduling section
-above). Every `ingest predict` run is also now logged to MLflow (hyperparameters,
-cutoff hour, training set size, and the trained models themselves) as a local,
-file-based audit trail (see
-[ADR 0009](docs/decisions/0009-mlflow-model-tracking.md)). A read-only serving API
-(see [ADR 0010](docs/decisions/0010-serving-api.md) and the Serving API section above)
-exposes these results over HTTP, locally for now. A Streamlit dashboard (see
-[ADR 0011](docs/decisions/0011-dashboard.md) and the Dashboard section above)
-visualizes them: tomorrow's forecast and a historical model-vs-RTE-vs-actual
-comparison with live coverage/MAE metrics. Still ahead: deploying the API and
-dashboard publicly, and an extension estimating the probability of an RTE "Tempo" red
-day from the probabilistic forecast.
+**v2 — shipped**:
+- `ingest daily-forecast` — refresh, rebuild, retrain, predict in one command, verified
+  against the live RTE and Open-Meteo APIs ([ADR 0007](docs/decisions/0007-daily-forecast-pipeline.md))
+- Daily automated run via a local Airflow instance ([ADR 0008](docs/decisions/0008-airflow-daily-scheduling.md))
+- MLflow run tracking for every prediction ([ADR 0009](docs/decisions/0009-mlflow-model-tracking.md))
+- Read-only FastAPI serving layer ([ADR 0010](docs/decisions/0010-serving-api.md))
+- Streamlit dashboard ([ADR 0011](docs/decisions/0011-dashboard.md))
+
+**v2 — still ahead**: deploying the API and dashboard publicly; an extension estimating
+the probability of an RTE "Tempo" red day from the probabilistic forecast.
+
+**Known limitation**: the current 80% prediction interval is not well-calibrated (55.1%
+real coverage). Point-forecast numbers above are unaffected by this — it's specific to the
+interval, not the median prediction.
 
 ## Engineering standards
 
