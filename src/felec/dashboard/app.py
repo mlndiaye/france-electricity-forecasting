@@ -32,7 +32,7 @@ st.title("France Electricity Forecasting")
 st.header("Tomorrow's forecast")
 try:
     latest = fetch_latest_forecast(BASE_URL)
-    st.plotly_chart(latest_forecast_chart(latest), use_container_width=True)
+    st.plotly_chart(latest_forecast_chart(latest), width="stretch")
 except ApiUnavailableError:
     st.error(API_HINT.format(url=BASE_URL))
 except ForecastNotReadyError:
@@ -52,7 +52,7 @@ try:
         metric_col1, metric_col2 = st.columns(2)
         metric_col1.metric("80% interval coverage", f"{compute_interval_coverage(history):.1%}")
         metric_col2.metric("RTE MAE", f"{compute_rte_mae(history):.0f} MW")
-        st.plotly_chart(history_chart(history), use_container_width=True)
+        st.plotly_chart(history_chart(history), width="stretch")
 except ApiUnavailableError:
     st.error(API_HINT.format(url=BASE_URL))
 except ForecastNotReadyError:
