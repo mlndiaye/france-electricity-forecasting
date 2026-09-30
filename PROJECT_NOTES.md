@@ -164,8 +164,28 @@ was raised as a near-term goal during brainstorming but deliberately deferred to
 own future decision — the same class of "local produces the data, a public instance
 would need to reach it" problem ADR 0008 already named for scheduling.
 
-A dashboard consuming this API, deploying it publicly, and the Tempo extension are
-still ahead.
+**Dashboard** (`docs/decisions/0011-dashboard.md`): a Streamlit dashboard
+(`src/felec/dashboard/`) consumes the serving API over HTTP (not Parquet directly —
+keeps the API/dashboard decoupled and avoids duplicating ADR 0010's join logic).
+Split into `data.py` (HTTP client + pure metrics, unit-tested), `charts.py` (Plotly
+figure builders, unit-tested), and a thin `app.py` (not unit-tested, verified
+manually). Shows tomorrow's forecast and a historical model-vs-RTE-vs-actual
+comparison with a date range picker. Deliberately shows only interval coverage % and
+RTE's MAE, not a "model MAE" — `/forecast/history` has no median forecast to compute
+one honestly from (decided explicitly during brainstorming rather than approximating
+one). Verified end-to-end for real: ran the exact fetch/compute/chart code path
+app.py uses against the live API — 24 rows for tomorrow's forecast, 722 rows for a
+30-day history window, **56.8% interval coverage** (consistent with ADR 0006's
+documented 55.1%, a good cross-check), RTE MAE 552.7 MW, no exceptions; also confirmed
+the error path raises cleanly when the API is stopped. The plan called for a real
+browser check too, but the Claude-in-Chrome extension wasn't connected in this
+session, so the dashboard's actual visual rendering (layout, no UI-level crash) was
+not confirmed — worth doing manually (`uv run streamlit run src/felec/dashboard/app.py`)
+before treating this as fully verified. One unrelated real finding along the way:
+Streamlit 1.64's `use_container_width` parameter is already past its stated removal
+date (2025-12-31) — switched to `width="stretch"`.
+
+Deploying the API and dashboard publicly, and the Tempo extension are still ahead.
 
 **Known limitation**: the current 80% prediction interval is not well-calibrated (55.1%
 real coverage). Point-forecast numbers above are unaffected by this — it's specific to the
