@@ -161,11 +161,28 @@ Interactive docs at http://localhost:8000/docs. Endpoints:
 Local only for now — deployment (a public link) is a deliberately separate,
 not-yet-made decision (see ADR 0010's Consequences).
 
+## Dashboard
+
+A Streamlit dashboard visualizes the serving API's results — see
+[ADR 0011](docs/decisions/0011-dashboard.md) for why Streamlit, and why it shows
+interval coverage and RTE's MAE but not a "model MAE" (the underlying data has no
+median forecast to compute one honestly from).
+
+Requires the serving API running separately (see the Serving API section above):
+
+```bash
+uv run streamlit run src/felec/dashboard/app.py
+```
+
+Opens at http://localhost:8501. Shows tomorrow's forecast (with its 80% interval) and
+a historical model-vs-RTE-vs-actual comparison over a selectable date range, with
+live-computed coverage and RTE MAE metrics.
+
 ## Tech stack
 
 Python 3.12 · `uv` · pandas · LightGBM · scikit-learn · pandera (data validation) ·
 pytest · ruff · Jupyter / matplotlib · Airflow (local scheduling) · MLflow (model
-tracking) · FastAPI (serving)
+tracking) · FastAPI (serving) · Streamlit + Plotly (dashboard)
 
 ## Project status
 
@@ -185,10 +202,12 @@ cutoff hour, training set size, and the trained models themselves) as a local,
 file-based audit trail (see
 [ADR 0009](docs/decisions/0009-mlflow-model-tracking.md)). A read-only serving API
 (see [ADR 0010](docs/decisions/0010-serving-api.md) and the Serving API section above)
-exposes these results over HTTP, locally for now. Still ahead: a simple dashboard
-consuming this API (forecast vs. RTE vs. actual), deploying the API publicly, and an
-extension estimating the probability of an RTE "Tempo" red day from the probabilistic
-forecast.
+exposes these results over HTTP, locally for now. A Streamlit dashboard (see
+[ADR 0011](docs/decisions/0011-dashboard.md) and the Dashboard section above)
+visualizes them: tomorrow's forecast and a historical model-vs-RTE-vs-actual
+comparison with live coverage/MAE metrics. Still ahead: deploying the API and
+dashboard publicly, and an extension estimating the probability of an RTE "Tempo" red
+day from the probabilistic forecast.
 
 ## Engineering standards
 
